@@ -101,25 +101,15 @@ export default function VideoCallOverlay({
   if (!localStreamRef.current) {
     const s = await getMediaSmart();
     localStreamRef.current = s;
+    setLocalHasVideo(s.getVideoTracks().length > 0);
 
-    // determine availability from actual tracks
-    const hasVideoTrack = s.getVideoTracks().length > 0;
-    setLocalHasVideo(hasVideoTrack);
-
-    // Always attach to local video if video exists
-    if (localVideoRef.current && hasVideoTrack) {
-      localVideoRef.current.srcObject = s;
-    }
-  } else {
-    // Already exists — reattach for safety
-    const s = localStreamRef.current;
-    const hasVideoTrack = s.getVideoTracks().length > 0;
-    setLocalHasVideo(hasVideoTrack);
-    if (localVideoRef.current && hasVideoTrack) {
+    // Always set video element right away if it exists
+    if (s.getVideoTracks().length > 0 && localVideoRef.current) {
       localVideoRef.current.srcObject = s;
     }
   }
 }
+
 
   const newPeer = () =>
     new RTCPeerConnection({
