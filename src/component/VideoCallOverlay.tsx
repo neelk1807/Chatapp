@@ -3,15 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { db } from "../app/lib/firebase";
 import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  onSnapshot,
-  query,
-  where,
-  serverTimestamp,
-  updateDoc,
+  addDoc, collection, doc, getDoc, onSnapshot,
+  query, where, serverTimestamp, updateDoc
 } from "firebase/firestore";
 import { useAuth } from "./AuthProvider";
 
@@ -54,62 +47,58 @@ export default function VideoCallOverlay({
 
   const callsCol = collection(db, "conversations", convoId, "calls");
 
-  // ---------- Media helpers (mic-only friendly) ----------
+  // ---------- Media helpers (mic-only & Vercel-friendly) ----------
   const mediaAPI = () =>
     typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
 
   async function getMediaSmart(): Promise<MediaStream> {
     const m = mediaAPI();
     if (!m || !m.getUserMedia) {
-      throw new Error("Camera & mic require HTTPS (or localhost).");
+      throw new Error("Camera & mic require HTTPS (Vercel is OK) or localhost.");
     }
     const devices = await m.enumerateDevices();
     const cam = devices.some((d) => d.kind === "videoinput");
     const mic = devices.some((d) => d.kind === "audioinput");
     setHasCam(cam);
     setHasMic(mic);
-
     if (!cam && !mic) throw new Error("No camera or microphone found.");
 
+    // Desktop-friendly constraints (avoid forcing facingMode)
     const constraints =
       cam && mic
-        ? { video: { facingMode: "user" }, audio: true }
-        : { video: cam ? { facingMode: "user" } : false, audio: mic };
+        ? { video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true }
+        : { video: cam ? true : false, audio: mic };
 
     try {
       const stream = await m.getUserMedia(constraints);
-      setLocalHasVideo(stream.getVideoTracks().length > 0);
       return stream;
     } catch (e: any) {
-      // fallbacks
-      if (e?.name === "NotFoundError" || e?.name === "OverconstrainedError") {
-        if (mic) {
-          const s = await m.getUserMedia({ video: false, audio: true });
-          setLocalHasVideo(false);
-          return s;
-        }
-      }
-      if (e?.name === "NotAllowedError")
-        throw new Error("Permission blocked. Allow camera/mic.");
-      if (e?.name === "NotReadableError")
-        throw new Error("Device in use by another app (Zoom/Teams/etc).");
+      // fallback to audio-only if camera denied/not present
+      if (mic) return await m.getUserMedia({ video: false, audio: true });
       throw e;
     }
   }
 
-  async function ensureLocalStream() {
-  if (!localStreamRef.current) {
-    const s = await getMediaSmart();
-    localStreamRef.current = s;
-    setLocalHasVideo(s.getVideoTracks().length > 0);
+  async function attachVideo(el: HTMLVideoElement, stream: MediaStream) {
+    el.srcObject = stream;
+    try { await el.play(); } catch {}
+  }
 
-    // Always set video element right away if it exists
-    if (s.getVideoTracks().length > 0 && localVideoRef.current) {
-      localVideoRef.current.srcObject = s;
+  async function ensureLocalStream() {
+    if (!localStreamRef.current) {
+      const s = await getMediaSmart();
+      localStreamRef.current = s;
+    }
+    // derive flags from the actual stream (don’t rely on previous state)
+    const s = localStreamRef.current!;
+    const hasVid = s.getVideoTracks().length > 0;
+    setLocalHasVideo(hasVid);
+
+    // always attach immediately if we have a video track
+    if (localVideoRef.current && hasVid) {
+      await attachVideo(localVideoRef.current, s);
     }
   }
-}
-
 
   const newPeer = () =>
     new RTCPeerConnection({
@@ -124,16 +113,27 @@ export default function VideoCallOverlay({
 
   const wireRemote = () => {
     const pc = pcRef.current!;
-    pc.ontrack = (ev) => {
+    pc.ontrack = async (ev) => {
       const stream = ev.streams[0];
-      // set flags for UI
-      setRemoteHasVideo(stream.getVideoTracks().length > 0);
-      // route media
+
+      // If the stream’s video track is initially muted, wait for it.
+      stream.getVideoTracks().forEach((t) => {
+        t.onunmute = async () => {
+          setRemoteHasVideo(true);
+          if (remoteVideoRef.current) await attachVideo(remoteVideoRef.current, stream);
+        };
+      });
+
+      // flags + attachments right away
+      const hasVid = stream.getVideoTracks().length > 0;
+      setRemoteHasVideo(hasVid);
+
       if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = stream; // works for A/V or video-only
+        await attachVideo(remoteVideoRef.current, stream);
       }
       if (remoteAudioRef.current) {
-        remoteAudioRef.current.srcObject = stream; // ensures audio plays even if no video
+        remoteAudioRef.current.srcObject = stream;
+        try { await remoteAudioRef.current.play(); } catch {}
       }
     };
   };
@@ -142,27 +142,14 @@ export default function VideoCallOverlay({
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = null;
 
+    try { (pcRef.current as any)?._unsubs?.forEach((u: any) => u && u()); } catch {}
     try {
-      (pcRef.current as any)?._unsubs?.forEach((u: any) => u && u());
-    } catch {}
-    try {
-      pcRef.current?.getSenders().forEach((s) => {
-        try {
-          s.track?.stop();
-        } catch {}
-      });
+      pcRef.current?.getSenders().forEach((s) => { try { s.track?.stop(); } catch {} });
       pcRef.current?.close();
     } catch {}
-    localStreamRef.current?.getTracks().forEach((t) => {
-      try {
-        t.stop();
-      } catch {}
-    });
-    remoteStreamRef.current?.getTracks().forEach((t) => {
-      try {
-        t.stop();
-      } catch {}
-    });
+
+    localStreamRef.current?.getTracks().forEach((t) => { try { t.stop(); } catch {} });
+    remoteStreamRef.current?.getTracks().forEach((t) => { try { t.stop(); } catch {} });
 
     localStreamRef.current = null;
     remoteStreamRef.current = new MediaStream();
@@ -179,7 +166,7 @@ export default function VideoCallOverlay({
         setStep("preview");
       } catch (e: any) {
         setError(e?.message || String(e));
-        setStep("preview"); // still allow overlay to open
+        setStep("preview"); // still open overlay for audio-only
       }
     })();
     return () => cleanup("unmount");
@@ -207,7 +194,7 @@ export default function VideoCallOverlay({
     try {
       setError(null);
       setStatusMessage(null);
-      await ensureLocalStream();
+      await ensureLocalStream(); // ensures local video binding NOW
       setStep("calling");
 
       const pc = newPeer();
@@ -238,10 +225,7 @@ export default function VideoCallOverlay({
 
       // 30s timeout if nobody answers
       timeoutRef.current = setTimeout(async () => {
-        await updateDoc(callRef, {
-          status: "not-answered",
-          updatedAt: serverTimestamp(),
-        });
+        await updateDoc(callRef, { status: "not-answered", updatedAt: serverTimestamp() });
         cleanup("no-answer");
         setStatusMessage("Call not answered");
         setStep("preview");
@@ -275,10 +259,7 @@ export default function VideoCallOverlay({
       const stopAnsWatch = onSnapshot(collection(callRef, "answerCandidates"), (snap) => {
         snap.docChanges().forEach(async (c) => {
           if (c.type === "added") {
-            try {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              await pc.addIceCandidate(new RTCIceCandidate(c.doc.data() as any));
-            } catch {}
+            try { await pc.addIceCandidate(new RTCIceCandidate(c.doc.data() as any)); } catch {}
           }
         });
       });
@@ -294,7 +275,7 @@ export default function VideoCallOverlay({
     try {
       setError(null);
       setStatusMessage(null);
-      await ensureLocalStream();
+      await ensureLocalStream(); // ensures local video binding NOW
 
       const callDocRef = doc(db, "conversations", convoId, "calls", callId!);
       const callSnap = await getDoc(callDocRef);
@@ -342,10 +323,8 @@ export default function VideoCallOverlay({
         }
       });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (pc as any)._unsubs = [stopOfferWatch, stopCallWatch];
       setStep("in-call");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       setError(e?.message || String(e));
       setStep("preview");
@@ -355,9 +334,7 @@ export default function VideoCallOverlay({
   const rejectCall = async () => {
     if (callId) {
       const callDocRef = doc(db, "conversations", convoId, "calls", callId);
-      try {
-        await updateDoc(callDocRef, { status: "rejected", updatedAt: serverTimestamp() });
-      } catch {}
+      try { await updateDoc(callDocRef, { status: "rejected", updatedAt: serverTimestamp() }); } catch {}
     }
     cleanup("rejected");
     setStep("preview");
@@ -414,13 +391,18 @@ export default function VideoCallOverlay({
 
       {/* Media area */}
       <div className="flex-1 grid place-items-center relative p-4">
-        {/* Remote */}
+        {/* Remote (big) */}
         {remoteHasVideo ? (
-          <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover rounded-lg bg-black" />
+          <video
+            ref={remoteVideoRef}
+            autoPlay
+            playsInline
+            className="w-full h-full object-cover rounded-lg bg-black"
+          />
         ) : (
-          <div className="w-full h-full rounded-lg bg-gray-100 grid place-items-center text-gray-600 text-lg">
-            <span>Audio call… 🎤</span>
-            {/* Hidden audio element to actually play remote audio */}
+          <div className="w-full h-full rounded-lg bg-black grid place-items-center text-gray-300 text-lg">
+            <span>Waiting for remote video…</span>
+            {/* Hidden audio so you still hear them */}
             <audio ref={remoteAudioRef} autoPlay />
           </div>
         )}
@@ -434,6 +416,7 @@ export default function VideoCallOverlay({
               playsInline
               muted
               className="w-48 h-36 rounded-lg border shadow bg-black object-cover"
+              onLoadedMetadata={async (e) => { try { await (e.currentTarget as HTMLVideoElement).play(); } catch {} }}
             />
           ) : (
             <div className="w-40 h-28 rounded-lg border shadow bg-white/90 grid place-items-center text-sm text-gray-600">
