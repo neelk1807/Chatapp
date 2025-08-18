@@ -357,31 +357,31 @@ export default function VideoCallOverlay({
         <div className="font-semibold">Call</div>
         <div className="flex items-center gap-2">
           {step === "preview" && (
-            <button className="border px-3 py-1 rounded bg-green-500 text-white" onClick={startCall}>
+            <button className="border px-3 py-1 rounded bg-green-500 text-white cursor-pointer" onClick={startCall}>
               Start Call
             </button>
           )}
           {step === "calling" && (
-            <button className="border px-3 py-1 rounded bg-red-500 text-white" onClick={endCall}>
+            <button className="border px-3 py-1 rounded bg-red-500 text-white cursor-pointer" onClick={endCall}>
               Cancel
             </button>
           )}
           {step === "incoming" && (
             <>
-              <button className="border px-3 py-1 rounded bg-green-500 text-white" onClick={acceptCall}>
+              <button className="border px-3 py-1 rounded bg-green-500 text-white cursor-pointer" onClick={acceptCall}>
                 Accept
               </button>
-              <button className="border px-3 py-1 rounded bg-red-500 text-white" onClick={rejectCall}>
+              <button className="border px-3 py-1 rounded bg-red-500 text-white cursor-pointer" onClick={rejectCall}>
                 Reject
               </button>
             </>
           )}
           {step === "in-call" && (
-            <button className="border px-3 py-1 rounded bg-red-500 text-white" onClick={endCall}>
+            <button className="border px-3 py-1 rounded bg-red-500 text-white cursor-pointer" onClick={endCall}>
               End
             </button>
           )}
-          <button className="text-sm underline" onClick={onClose}>Close</button>
+          <button className="text-sm underline cursor-pointer" onClick={onClose}>Close</button>
         </div>
       </div>
 
