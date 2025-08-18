@@ -94,7 +94,7 @@ export default function LoginPage() {
           onChange={(e) => setPhone(e.target.value)}
         />
         <button
-          className="btn border p-2 rounded w-full disabled:opacity-50"
+          className="btn border p-2 rounded w-full disabled:opacity-50 cursor-pointer"
           disabled={sending || !phone}
           onClick={sendOTP}
         >
@@ -110,7 +110,7 @@ export default function LoginPage() {
               onChange={(e) => setCode(e.target.value)}
             />
             <button
-              className="btn border p-2 rounded w-full disabled:opacity-50"
+              className="btn border p-2 rounded w-full disabled:opacity-50 cursor-pointer"
               disabled={verifying || !code}
               onClick={verify}
             >
