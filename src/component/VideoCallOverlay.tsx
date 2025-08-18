@@ -112,31 +112,27 @@ export default function VideoCallOverlay({
   };
 
   const wireRemote = () => {
-    const pc = pcRef.current!;
-    pc.ontrack = async (ev) => {
-      const stream = ev.streams[0];
+  const pc = pcRef.current!;
+  pc.ontrack = async (ev) => {
+    ev.streams[0].getTracks().forEach(track => {
+      remoteStreamRef.current?.addTrack(track);
+    });
 
-      // If the stream’s video track is initially muted, wait for it.
-      stream.getVideoTracks().forEach((t) => {
-        t.onunmute = async () => {
-          setRemoteHasVideo(true);
-          if (remoteVideoRef.current) await attachVideo(remoteVideoRef.current, stream);
-        };
-      });
+    // attach once the stream has tracks
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStreamRef.current!;
+      try { await remoteVideoRef.current.play(); } catch {}
+    }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = remoteStreamRef.current!;
+      try { await remoteAudioRef.current.play(); } catch {}
+    }
 
-      // flags + attachments right away
-      const hasVid = stream.getVideoTracks().length > 0;
-      setRemoteHasVideo(hasVid);
-
-      if (remoteVideoRef.current) {
-        await attachVideo(remoteVideoRef.current, stream);
-      }
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.srcObject = stream;
-        try { await remoteAudioRef.current.play(); } catch {}
-      }
-    };
+    // set video flag properly
+    const hasVid = remoteStreamRef.current?.getVideoTracks().length > 0;
+    setRemoteHasVideo(hasVid);
   };
+};
 
   const cleanup = (_why: string) => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
