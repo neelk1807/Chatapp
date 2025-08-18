@@ -54,7 +54,7 @@ export default function PeoplePicker({ onOpen }: { onOpen: (id: string)=>void })
         {allUsers.map(u => (
           <li key={u.uid}>
             <button
-              className="w-full text-left p-2 hover:bg-gray-100 rounded flex items-center gap-2"
+              className="w-full text-left p-2 hover:bg-gray-100 rounded flex items-center gap-2 cursor-pointer"
               onClick={() => startChat(u.uid)}
               title={u.email || u.phoneNumber}
             >
