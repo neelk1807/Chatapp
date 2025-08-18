@@ -41,7 +41,7 @@ export default function Conversations({ onOpen }: { onOpen: (id: string)=>void }
       <ul className="space-y-1">
         {items.map(c => (
           <li key={c.id}>
-            <button className="w-full text-left p-2 hover:bg-gray-100 rounded"
+            <button className="w-full text-left p-2 hover:bg-gray-100 rounded cursor-pointer"
               onClick={()=>onOpen(c.id)}>
               {c.lastMessage?.text ? c.lastMessage.text : "New chat"} <span className="opacity-60">· {c.members.length} members</span>
             </button>
