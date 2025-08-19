@@ -129,7 +129,7 @@ export default function VideoCallOverlay({
     }
 
     // set video flag properly
-    const hasVid = remoteStreamRef.current?.getVideoTracks().length > 0;
+    const hasVid = (remoteStreamRef.current?.getVideoTracks()?.length ?? 0) > 0;
     setRemoteHasVideo(hasVid);
   };
 };
