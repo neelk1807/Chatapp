@@ -17,6 +17,7 @@ import {
   where,
   arrayUnion,
   arrayRemove,
+  deleteDoc,
 } from "firebase/firestore";
 import { useAuth } from "./AuthProvider";
 import VideoCallOverlay from "@/component/VideoCallOverlay";
@@ -33,6 +34,7 @@ type Msg = {
   replyToId?: string | null;
   replyPreview?: { text: string; senderId: string } | null;
   starredBy?: string[];
+  deletedFor?: string[]; // 👈 per-user hide list for "Delete for me"
 };
 
 export default function ChatWindow({ convoId }: { convoId: string }) {
@@ -115,6 +117,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
           ? { text: replyTo.text?.slice(0, 140) ?? "", senderId: replyTo.senderId }
           : null,
         starredBy: [],
+        deletedFor: [], // init empty
       });
 
       setText("");
@@ -183,6 +186,41 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     }
   };
 
+  // ---- Delete options ----
+
+  // Delete for me: add my uid to deletedFor[]
+  const deleteForMe = async (m: Msg) => {
+    if (!user) return;
+    try {
+      await updateDoc(doc(db, "conversations", convoId, "messages", m.id), {
+        deletedFor: arrayUnion(user.uid),
+      });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (e: any) {
+      alert("Failed to delete for me: " + (e.code || e.message || e));
+    } finally {
+      setMenuOpen(null);
+    }
+  };
+
+  // Delete for everyone: hard delete (sender only)
+  const deleteForEveryone = async (m: Msg) => {
+    if (!user) return;
+    if (m.senderId !== user.uid) {
+      alert("Only the sender can delete for everyone.");
+      return;
+    }
+    if (!confirm("Delete this message for everyone?")) return;
+    try {
+      await deleteDoc(doc(db, "conversations", convoId, "messages", m.id));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (e: any) {
+      alert("Failed to delete for everyone: " + (e.code || e.message || e));
+    } finally {
+      setMenuOpen(null);
+    }
+  };
+
   // ------------------- Clear chat (keep starred) -------------------
 
   const clearChat = async () => {
@@ -238,13 +276,18 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
 
   // ------------------- UI -------------------
 
+  const myUid = user?.uid;
+
   return (
     <div className="flex flex-col h-full relative" onClick={() => setMenuOpen(null)}>
       {/* Header */}
       <div className="p-3 border-b flex items-center justify-between">
         <div className="font-semibold">Chat</div>
         <div className="flex items-center gap-3">
-          <button className="border px-3 py-1 rounded bg-green-900 text-white cursor-pointer" onClick={() => setShowVideo(true)}>
+          <button
+            className="border px-3 py-1 rounded bg-green-900 text-white cursor-pointer"
+            onClick={() => setShowVideo(true)}
+          >
             Video
           </button>
           <button
@@ -260,108 +303,125 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {msgs.map((m) => {
-          const mine = m.senderId === user?.uid;
-          const isEditing = editingId === m.id;
-          const isStarredByMe = !!user && (m.starredBy || []).includes(user.uid);
+        {msgs
+          .filter((m) => (myUid ? !(m.deletedFor || []).includes(myUid) : true)) // hide messages "deleted for me"
+          .map((m) => {
+            const mine = m.senderId === user?.uid;
+            const isEditing = editingId === m.id;
+            const isStarredByMe = !!user && (m.starredBy || []).includes(user.uid);
 
-          return (
-            <div key={m.id} className={`max-w-[75%] ${mine ? "ml-auto" : ""} relative group`}>
-              <div className={`p-2 rounded ${mine ? "bg-blue-100" : "bg-gray-100"}`}>
-                {/* Reply preview inside bubble */}
-                <ReplyPreviewInBubble m={m} />
+            return (
+              <div key={m.id} className={`max-w-[75%] ${mine ? "ml-auto" : ""} relative group`}>
+                <div className={`p-2 rounded ${mine ? "bg-blue-100" : "bg-gray-100"}`}>
+                  {/* Reply preview inside bubble */}
+                  <ReplyPreviewInBubble m={m} />
 
-                {/* Text or editor */}
-                {!isEditing ? (
-                  <>
-                    <div className="whitespace-pre-wrap">{m.text}</div>
-                    <div className="mt-1 flex items-center gap-2 text-[10px] text-gray-500">
-                      {m.editedAt && <span>edited</span>}
-                      {isStarredByMe && <span>★ starred</span>}
+                  {/* Text or editor */}
+                  {!isEditing ? (
+                    <>
+                      <div className="whitespace-pre-wrap">{m.text}</div>
+                      <div className="mt-1 flex items-center gap-2 text-[10px] text-gray-500">
+                        {m.editedAt && <span>edited</span>}
+                        {isStarredByMe && <span>★ starred</span>}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      <textarea
+                        value={editText}
+                        onChange={(e) => setEditText(e.target.value)}
+                        rows={2}
+                        className="w-full border rounded p-2"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            saveEdit(m);
+                          }}
+                          className="px-2 py-1 border rounded bg-blue-600 text-white text-xs"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            cancelEdit();
+                          }}
+                          className="px-2 py-1 border rounded text-xs"
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     </div>
-                  </>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    <textarea
-                      value={editText}
-                      onChange={(e) => setEditText(e.target.value)}
-                      rows={2}
-                      className="w-full border rounded p-2"
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    <div className="flex gap-2">
+                  )}
+                </div>
+
+                {/* Three-dot horizontal menu trigger */}
+                <button
+                  className="absolute -bottom-2 -right-1 h-8 w-8 place-items-center text-black opacity-70 hover:opacity-100 cursor-pointer"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMenuOpen(menuOpen === m.id ? null : m.id);
+                  }}
+                  title="Message actions"
+                >
+                  ⋯
+                </button>
+
+                {/* Actions menu */}
+                {menuOpen === m.id && (
+                  <div
+                    className="absolute right-0 mt-1 bg-white border rounded shadow text-sm z-10 min-w-40 cursor-pointer"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      onClick={() => toggleStar(m)}
+                      className="block w-full text-left hover:bg-gray-100 px-3 py-2 cursor-pointer"
+                    >
+                      {isStarredByMe ? "Unstar" : "Star"}
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setReplyTo(m);
+                        setMenuOpen(null);
+                      }}
+                      className="block w-full text-left hover:bg-gray-100 px-3 py-2 cursor-pointer"
+                    >
+                      Reply
+                    </button>
+
+                    {mine && canEdit(m) && !isEditing && (
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          saveEdit(m);
-                        }}
-                        className="px-2 py-1 border rounded bg-blue-600 text-white text-xs"
+                        onClick={() => startEdit(m)}
+                        className="block w-full text-left hover:bg-gray-100 px-3 py-2"
                       >
-                        Save
+                        Edit
                       </button>
+                    )}
+
+                    <button
+                      onClick={() => deleteForMe(m)}
+                      className="block w-full text-left hover:bg-gray-100 px-3 py-2"
+                    >
+                      Delete for me
+                    </button>
+
+                    {mine && (
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          cancelEdit();
-                        }}
-                        className="px-2 py-1 border rounded text-xs"
+                        onClick={() => deleteForEveryone(m)}
+                        className="block w-full text-left hover:bg-gray-100 px-3 py-2 text-red-600"
                       >
-                        Cancel
+                        Delete for everyone
                       </button>
-                    </div>
+                    )}
                   </div>
                 )}
               </div>
-
-              {/* Three-dot horizontal menu trigger */}
-              <button
-                className="absolute -bottom-2 -right-1 h-8 w-8  place-items-center text-black opacity-70 hover:opacity-100 cursor-pointer"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMenuOpen(menuOpen === m.id ? null : m.id);
-                }}
-                title="Message actions"
-              >
-                {/* horizontal ellipsis */}
-                ⋯
-              </button>
-
-              {/* Actions menu */}
-              {menuOpen === m.id && (
-                <div
-                  className="absolute right-0 mt-1 bg-white border rounded shadow text-sm z-10 min-w-32 cursor-pointer"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <button
-                    onClick={() => toggleStar(m)}
-                    className="block w-full text-left hover:bg-gray-100 px-3 py-2 cursor-pointer"
-                  >
-                    {isStarredByMe ? "Unstar" : "Star"}
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setReplyTo(m);
-                      setMenuOpen(null);
-                    }}
-                    className="block w-full text-left hover:bg-gray-100 px-3 py-2 cursor-pointer"
-                  >
-                    Reply
-                  </button>
-
-                  {mine && canEdit(m) && !isEditing && (
-                    <button
-                      onClick={() => startEdit(m)}
-                      className="block w-full text-left hover:bg-gray-100 px-3 py-2"
-                    >
-                      Edit
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+            );
+          })}
         <div ref={bottomRef} />
       </div>
 
