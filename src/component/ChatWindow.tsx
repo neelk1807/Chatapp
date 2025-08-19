@@ -22,6 +22,10 @@ import {
 import { useAuth } from "./AuthProvider";
 import VideoCallOverlay from "@/component/VideoCallOverlay";
 
+// 👇 emoji-mart (v5)
+import Picker from "@emoji-mart/react";
+import data from "@emoji-mart/data";
+
 type Msg = {
   id: string;
   text: string;
@@ -34,7 +38,7 @@ type Msg = {
   replyToId?: string | null;
   replyPreview?: { text: string; senderId: string } | null;
   starredBy?: string[];
-  deletedFor?: string[]; // 👈 per-user hide list for "Delete for me"
+  deletedFor?: string[]; // per-user hide list for "Delete for me"
 };
 
 export default function ChatWindow({ convoId }: { convoId: string }) {
@@ -54,9 +58,13 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
 
+  // Emoji picker
+  const [showEmoji, setShowEmoji] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Auto-open overlay on incoming ringing call (optional quality-of-life)
+  // Auto-open overlay on incoming ringing call (optional)
   useEffect(() => {
     if (!convoId || !user) return;
     const callsCol = collection(db, "conversations", convoId, "calls");
@@ -94,7 +102,10 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
 
   // Close any open menu when clicking elsewhere
   useEffect(() => {
-    const handler = () => setMenuOpen(null);
+    const handler = () => {
+      setMenuOpen(null);
+      setShowEmoji(false);
+    };
     window.addEventListener("click", handler);
     return () => window.removeEventListener("click", handler);
   }, []);
@@ -274,25 +285,58 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
       </div>
     ) : null;
 
+  // Insert emoji at caret in textarea (fallback: append)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const insertEmoji = (emoji: any) => {
+    const char = emoji?.native || "";
+    if (!char) return;
+    const el = textareaRef.current;
+    if (!el) {
+      setText((prev) => prev + char);
+      return;
+    }
+    const start = el.selectionStart ?? text.length;
+    const end = el.selectionEnd ?? text.length;
+    const newValue = text.slice(0, start) + char + text.slice(end);
+    setText(newValue);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + char.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
   // ------------------- UI -------------------
 
   const myUid = user?.uid;
 
   return (
-    <div className="flex flex-col h-full relative" onClick={() => setMenuOpen(null)}>
+    <div
+      className="flex flex-col h-full relative"
+      onClick={() => {
+        setMenuOpen(null);
+        setShowEmoji(false);
+      }}
+    >
       {/* Header */}
       <div className="p-3 border-b flex items-center justify-between">
         <div className="font-semibold">Chat</div>
         <div className="flex items-center gap-3">
           <button
             className="border px-3 py-1 rounded bg-green-900 text-white cursor-pointer"
-            onClick={() => setShowVideo(true)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowVideo(true);
+            }}
           >
             Video
           </button>
           <button
-            className="text-xs underline disabled:opacity-50 "
-            onClick={clearChat}
+            className="text-xs underline disabled:opacity-50"
+            onClick={(e) => {
+              e.stopPropagation();
+              clearChat();
+            }}
             disabled={clearing}
             title="Delete all non-starred messages"
           >
@@ -364,6 +408,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
                   onClick={(e) => {
                     e.stopPropagation();
                     setMenuOpen(menuOpen === m.id ? null : m.id);
+                    setShowEmoji(false);
                   }}
                   title="Message actions"
                 >
@@ -431,7 +476,13 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
           <div className="truncate">
             Replying to: <span className="italic">“{replyTo.text?.slice(0, 140)}”</span>
           </div>
-          <button className="underline" onClick={() => setReplyTo(null)}>
+          <button
+            className="underline"
+            onClick={(e) => {
+              e.stopPropagation();
+              setReplyTo(null);
+            }}
+          >
             Cancel
           </button>
         </div>
@@ -445,8 +496,44 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
       )}
 
       {/* Composer */}
-      <div className="p-3 border-t flex gap-2 items-end">
+      <div
+        className="p-3 border-t flex gap-2 items-end relative"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Emoji toggle */}
+        <button
+          type="button"
+          className="border px-3 py-2 rounded"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowEmoji((v) => !v);
+            setMenuOpen(null);
+            // keep focus on textarea after toggle
+            requestAnimationFrame(() => textareaRef.current?.focus());
+          }}
+          title="Emoji"
+        >
+          😊
+        </button>
+
+        {/* Emoji picker dropdown */}
+        {showEmoji && (
+          <div
+            className="absolute bottom-16 left-2 z-50"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Picker
+              data={data}
+              onEmojiSelect={insertEmoji}
+              theme="light"
+              previewPosition="none"
+              skinTonePosition="none"
+            />
+          </div>
+        )}
+
         <textarea
+          ref={textareaRef}
           className="flex-1 border p-2 rounded resize-none"
           rows={2}
           placeholder={
@@ -460,13 +547,16 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               send();
+              setShowEmoji(false);
             }
           }}
-          onClick={() => setMenuOpen(null)}
         />
         <button
           className="border px-4 py-2 rounded disabled:opacity-50"
-          onClick={send}
+          onClick={() => {
+            send();
+            setShowEmoji(false);
+          }}
           disabled={sending || !text.trim()}
         >
           {sending ? "Sending…" : "Send"}
