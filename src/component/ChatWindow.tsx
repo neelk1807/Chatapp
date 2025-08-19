@@ -151,10 +151,10 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     const canEdit =
       m.senderId === user.uid &&
       m.createdAt?.toMillis &&
-      Date.now() - m.createdAt.toMillis() <= 30_000;
+      Date.now() - m.createdAt.toMillis() <= 10_000;
 
     if (!canEdit) {
-      alert("You can edit only your own message within 30 seconds.");
+      alert("You can edit only your own message within 10 seconds.");
       return;
     }
 
@@ -265,7 +265,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
   const canEdit = (m: Msg) =>
     m.senderId === user?.uid &&
     m.createdAt?.toMillis &&
-    Date.now() - m.createdAt.toMillis() <= 30_000;
+    Date.now() - m.createdAt.toMillis() <= 10_000;
 
   const ReplyPreviewInBubble = ({ m }: { m: Msg }) =>
     m.replyPreview ? (
@@ -396,7 +396,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
                     {mine && canEdit(m) && !isEditing && (
                       <button
                         onClick={() => startEdit(m)}
-                        className="block w-full text-left hover:bg-gray-100 px-3 py-2"
+                        className="block w-full text-left hover:bg-gray-100 px-3 py-2 cursor-pointer"
                       >
                         Edit
                       </button>
@@ -404,7 +404,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
 
                     <button
                       onClick={() => deleteForMe(m)}
-                      className="block w-full text-left hover:bg-gray-100 px-3 py-2"
+                      className="block w-full text-left hover:bg-gray-100 px-3 py-2 cursor-pointer"
                     >
                       Delete for me
                     </button>
@@ -412,7 +412,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
                     {mine && (
                       <button
                         onClick={() => deleteForEveryone(m)}
-                        className="block w-full text-left hover:bg-gray-100 px-3 py-2 text-red-600"
+                        className="block w-full text-left hover:bg-gray-100 px-3 py-2 text-red-600 cursor-pointer"
                       >
                         Delete for everyone
                       </button>
