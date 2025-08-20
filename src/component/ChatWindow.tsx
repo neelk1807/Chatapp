@@ -65,19 +65,21 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
   const [editText, setEditText] = useState("");
 
   const bottomRef = useRef<HTMLDivElement>(null);
-// put this inside ChatWindow
-const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
-  const input = e.currentTarget;          // keep a stable reference
-  const file = input.files?.[0] ?? null;
+  // put this inside ChatWindow
+  const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (
+    e
+  ) => {
+    const input = e.currentTarget; // keep a stable reference
+    const file = input.files?.[0] ?? null;
 
-  // reset RIGHT NOW (before any await / promise)
-  input.value = "";
+    // reset RIGHT NOW (before any await / promise)
+    input.value = "";
 
-  if (!file) return;
+    if (!file) return;
 
-  // don't await here; let it run in background
-  void uploadAndSend(file);
-};
+    // don't await here; let it run in background
+    void uploadAndSend(file);
+  };
 
   // Attachment picker
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -114,9 +116,16 @@ const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
       q,
       (snap) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const rows = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Msg[];
+        const rows = snap.docs.map((d) => ({
+          id: d.id,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ...(d.data() as any),
+        })) as Msg[];
         setMsgs(rows);
-        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 0);
+        setTimeout(
+          () => bottomRef.current?.scrollIntoView({ behavior: "smooth" }),
+          0
+        );
       },
       (err) => console.error("messages listener error:", err)
     );
@@ -158,7 +167,10 @@ const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
         readBy: [user.uid],
         replyToId: replyTo?.id ?? null,
         replyPreview: replyTo
-          ? { text: replyTo.text?.slice(0, 140) ?? "", senderId: replyTo.senderId }
+          ? {
+              text: replyTo.text?.slice(0, 140) ?? "",
+              senderId: replyTo.senderId,
+            }
           : null,
         starredBy: [],
         deletedFor: [],
@@ -176,9 +188,13 @@ const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
 
       await updateDoc(doc(db, "conversations", convoId), {
         updatedAt: serverTimestamp(),
-        lastMessage: { text: uploaded.name, by: user.uid, at: serverTimestamp() },
+        lastMessage: {
+          text: uploaded.name,
+          by: user.uid,
+          at: serverTimestamp(),
+        },
       });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       alert("Failed to send attachment: " + (e?.message || e));
     } finally {
@@ -201,7 +217,10 @@ const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
         readBy: [user.uid],
         replyToId: replyTo?.id ?? null,
         replyPreview: replyTo
-          ? { text: replyTo.text?.slice(0, 140) ?? "", senderId: replyTo.senderId }
+          ? {
+              text: replyTo.text?.slice(0, 140) ?? "",
+              senderId: replyTo.senderId,
+            }
           : null,
         starredBy: [],
         deletedFor: [],
@@ -215,7 +234,7 @@ const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
         updatedAt: serverTimestamp(),
         lastMessage: { text: value, by: user.uid, at: serverTimestamp() },
       });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       alert("Failed to send: " + (e.code || e.message || e));
     } finally {
@@ -252,7 +271,7 @@ const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
         editedAt: serverTimestamp(),
       });
       cancelEdit();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       alert("Failed to edit: " + (e.code || e.message || e));
     }
@@ -266,7 +285,7 @@ const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
       await updateDoc(ref, {
         starredBy: isStarredByMe ? arrayRemove(user.uid) : arrayUnion(user.uid),
       });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       alert("Failed to toggle star: " + (e.code || e.message || e));
     } finally {
@@ -283,7 +302,7 @@ const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
       await updateDoc(doc(db, "conversations", convoId, "messages", m.id), {
         deletedFor: arrayUnion(user.uid),
       });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       alert("Failed to delete for me: " + (e.code || e.message || e));
     } finally {
@@ -308,7 +327,7 @@ const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
           body: JSON.stringify({ pathname: m.attachment.pathname }),
         });
       }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       alert("Failed to delete for everyone: " + (e.code || e.message || e));
     } finally {
@@ -319,7 +338,12 @@ const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
   // ------------------- Clear chat (keep starred) -------------------
 
   const clearChat = async () => {
-    if (!confirm("Clear all messages in this conversation? (Starred messages will be kept)")) return;
+    if (
+      !confirm(
+        "Clear all messages in this conversation? (Starred messages will be kept)"
+      )
+    )
+      return;
     setClearing(true);
     try {
       const messagesCol = collection(db, "conversations", convoId, "messages");
@@ -328,7 +352,13 @@ const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
 
       while (true) {
         let q = query(messagesCol, orderBy("createdAt"), limit(400));
-        if (last) q = query(messagesCol, orderBy("createdAt"), startAfter(last), limit(400));
+        if (last)
+          q = query(
+            messagesCol,
+            orderBy("createdAt"),
+            startAfter(last),
+            limit(400)
+          );
         const snap = await getDocs(q);
         if (snap.empty) break;
 
@@ -347,7 +377,7 @@ const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
         updatedAt: serverTimestamp(),
       });
       alert("Chat cleared (starred messages kept).");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       alert("Failed to clear chat: " + (e.code || e.message || e));
     } finally {
@@ -365,7 +395,8 @@ const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
   const ReplyPreviewInBubble = ({ m }: { m: Msg }) =>
     m.replyPreview ? (
       <div className="mb-1 text-[11px] px-2 py-1 rounded bg-white/60 border">
-        Replying to {m.replyPreview.senderId === user?.uid ? "you" : "them"}: “{m.replyPreview.text}”
+        Replying to {m.replyPreview.senderId === user?.uid ? "you" : "them"}: “
+        {m.replyPreview.text}”
       </div>
     ) : null;
 
@@ -374,7 +405,10 @@ const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
   const myUid = user?.uid;
 
   return (
-    <div className="flex flex-col h-full relative" onClick={() => setMenuOpen(null)}>
+    <div
+      className="flex flex-col h-full relative"
+      onClick={() => setMenuOpen(null)}
+    >
       {/* Header */}
       <div className="p-3 border-b flex items-center justify-between">
         <div className="font-semibold">Chat</div>
@@ -403,11 +437,21 @@ const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
           .map((m) => {
             const mine = m.senderId === user?.uid;
             const isEditing = editingId === m.id;
-            const isStarredByMe = !!user && (m.starredBy || []).includes(user.uid);
+            const isStarredByMe =
+              !!user && (m.starredBy || []).includes(user.uid);
 
             return (
-              <div key={m.id} className={`max-w-[75%] ${mine ? "ml-auto" : ""} relative group`}>
-                <div className={`p-2 rounded ${mine ? "bg-blue-100" : "bg-gray-100"}`}>
+              <div
+                key={m.id}
+                className={`max-w-[75%] ${
+                  mine ? "ml-auto" : ""
+                } relative group`}
+              >
+                <div
+                  className={`p-2 rounded ${
+                    mine ? "bg-blue-100" : "bg-gray-100"
+                  }`}
+                >
                   {/* Reply preview */}
                   <ReplyPreviewInBubble m={m} />
 
@@ -444,7 +488,7 @@ const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
                           </a>
                         )}
 
-                      {(!isEditing && m.text) && (
+                      {!isEditing && m.text && (
                         <div className="whitespace-pre-wrap">{m.text}</div>
                       )}
                     </div>
@@ -563,7 +607,8 @@ const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
       {replyTo && (
         <div className="px-3 py-2 border-t bg-yellow-50 text-[12px] flex items-center justify-between gap-3">
           <div className="truncate">
-            Replying to: <span className="italic">“{replyTo.text?.slice(0, 140)}”</span>
+            Replying to:{" "}
+            <span className="italic">“{replyTo.text?.slice(0, 140)}”</span>
           </div>
           <button className="underline" onClick={() => setReplyTo(null)}>
             Cancel
@@ -574,7 +619,10 @@ const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
       {/* Video Overlay */}
       {showVideo && (
         <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50">
-          <VideoCallOverlay convoId={convoId} onClose={() => setShowVideo(false)} />
+          <VideoCallOverlay
+            convoId={convoId}
+            onClose={() => setShowVideo(false)}
+          />
         </div>
       )}
 
@@ -584,19 +632,18 @@ const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
         <button
           type="button"
           onClick={pickFile}
-          className="border px-3 py-2 rounded"
+          className="border px-3 py-2 rounded cursor-pointer"
           title="Attach a file"
         >
-          📎 Attach
+        <img src="./attachment-svgrepo-com.svg" className="w-7"></img>
         </button>
         <input
-  ref={fileInputRef}
-  type="file"
-  accept="image/*,video/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.zip"
-  className="hidden"
-  onChange={handleAttachChange}
-/>
-
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,video/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.zip"
+          className="hidden"
+          onChange={handleAttachChange}
+        />
 
         <textarea
           className="flex-1 border p-2 rounded resize-none"

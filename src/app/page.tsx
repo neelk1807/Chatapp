@@ -18,11 +18,14 @@ export default function Home() {
   useEffect(() => {
     if (!loading && !user) router.push("/login");
   }, [loading, user, router]);
+
   if (loading || !user) return <div className="p-6">Loading…</div>;
 
   return (
-    <main className="h-screen grid grid-cols-[320px_1fr]">
-      <aside className="border-r flex flex-col">
+    // ✅ Window won’t scroll; only inner panes can
+    <main className="h-dvh grid grid-cols-[320px_1fr] overflow-hidden">
+      {/* Sidebar */}
+      <aside className="border-r flex flex-col min-h-0">
         <div className="p-3 flex items-center justify-between border-b">
           <div className="font-bold">Chats</div>
           <button
@@ -32,15 +35,23 @@ export default function Home() {
             Profile
           </button>
         </div>
-        <PeoplePicker onOpen={(id) => setOpenConvo(id)} />
-        <Conversations onOpen={(id) => setOpenConvo(id)} />
-        <div className="mt-auto p-3">
+
+        {/* ✅ Make the list area the scroller */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <PeoplePicker onOpen={(id) => setOpenConvo(id)} />
+          <Conversations onOpen={(id) => setOpenConvo(id)} />
+        </div>
+
+        <div className="p-3 border-t">
           <button className="text-sm underline" onClick={() => signOut(auth)}>
             Sign out
           </button>
         </div>
       </aside>
-      <section className="relative">
+
+      {/* Chat column */}
+      {/* ✅ Allow child (ChatWindow) to control scrolling */}
+      <section className="relative min-h-0 overflow-hidden">
         {openConvo ? (
           <ChatWindow convoId={openConvo} />
         ) : (
@@ -49,9 +60,9 @@ export default function Home() {
           </div>
         )}
 
-        {/* Profile panel overlays chat; "back side" you still see conversation list */}
+        {/* Profile overlay (scrolls inside if needed) */}
         {showProfile && (
-          <div className="absolute inset-0 bg-white/95 backdrop-blur border-l">
+          <div className="absolute inset-0 bg-white/95 backdrop-blur border-l flex flex-col">
             <div className="p-3 flex items-center justify-between border-b">
               <div className="font-semibold">Your Profile</div>
               <button
@@ -61,7 +72,9 @@ export default function Home() {
                 Close
               </button>
             </div>
-            <Profile />
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <Profile />
+            </div>
           </div>
         )}
       </section>
