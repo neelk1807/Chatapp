@@ -22,6 +22,15 @@ import {
 import { useAuth } from "./AuthProvider";
 import VideoCallOverlay from "@/component/VideoCallOverlay";
 
+// ---------- Types ----------
+type Attachment = {
+  url: string;
+  pathname: string; // needed for delete
+  name: string;
+  size: number;
+  contentType: string;
+};
+
 type Msg = {
   id: string;
   text: string;
@@ -34,7 +43,8 @@ type Msg = {
   replyToId?: string | null;
   replyPreview?: { text: string; senderId: string } | null;
   starredBy?: string[];
-  deletedFor?: string[]; // 👈 per-user hide list for "Delete for me"
+  deletedFor?: string[]; // per-user hide list for "Delete for me"
+  attachment?: Attachment | null; // 👈 NEW
 };
 
 export default function ChatWindow({ convoId }: { convoId: string }) {
@@ -55,8 +65,29 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
   const [editText, setEditText] = useState("");
 
   const bottomRef = useRef<HTMLDivElement>(null);
+// put this inside ChatWindow
+const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+  const input = e.currentTarget;          // keep a stable reference
+  const file = input.files?.[0] ?? null;
 
-  // Auto-open overlay on incoming ringing call (optional quality-of-life)
+  // reset RIGHT NOW (before any await / promise)
+  input.value = "";
+
+  if (!file) return;
+
+  // don't await here; let it run in background
+  void uploadAndSend(file);
+};
+
+  // Attachment picker
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pickFile = () => fileInputRef.current?.click();
+
+  // Helpers for rendering
+  const isImage = (ct?: string) => !!ct && ct.startsWith("image/");
+  const isVideo = (ct?: string) => !!ct && ct.startsWith("video/");
+
+  // Auto-open overlay on incoming ringing call
   useEffect(() => {
     if (!convoId || !user) return;
     const callsCol = collection(db, "conversations", convoId, "calls");
@@ -99,6 +130,62 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     return () => window.removeEventListener("click", handler);
   }, []);
 
+  // ---------- Attach: upload to Vercel Blob then send message ----------
+  const uploadAndSend = async (file: File) => {
+    if (!user) return;
+    try {
+      // 1) upload to Blob through API route
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("convoId", convoId);
+
+      const res = await fetch("/api/blob-upload", { method: "POST", body: fd });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        alert("Upload failed: " + (e.error || res.statusText));
+        return;
+      }
+      const uploaded = await res.json(); // { url, pathname, name, size, contentType }
+
+      // 2) create a message with attachment metadata (optional caption from current text)
+      const caption = text.trim();
+      setSending(true);
+
+      await addDoc(collection(db, "conversations", convoId, "messages"), {
+        text: caption,
+        senderId: user.uid,
+        createdAt: serverTimestamp(),
+        readBy: [user.uid],
+        replyToId: replyTo?.id ?? null,
+        replyPreview: replyTo
+          ? { text: replyTo.text?.slice(0, 140) ?? "", senderId: replyTo.senderId }
+          : null,
+        starredBy: [],
+        deletedFor: [],
+        attachment: {
+          url: uploaded.url,
+          pathname: uploaded.pathname,
+          name: uploaded.name,
+          size: uploaded.size,
+          contentType: uploaded.contentType,
+        } as Attachment,
+      });
+
+      setText("");
+      setReplyTo(null);
+
+      await updateDoc(doc(db, "conversations", convoId), {
+        updatedAt: serverTimestamp(),
+        lastMessage: { text: uploaded.name, by: user.uid, at: serverTimestamp() },
+      });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (e: any) {
+      alert("Failed to send attachment: " + (e?.message || e));
+    } finally {
+      setSending(false);
+    }
+  };
+
   // ------------------- Send / Reply / Edit / Star -------------------
 
   const send = async () => {
@@ -117,7 +204,8 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
           ? { text: replyTo.text?.slice(0, 140) ?? "", senderId: replyTo.senderId }
           : null,
         starredBy: [],
-        deletedFor: [], // init empty
+        deletedFor: [],
+        attachment: null,
       });
 
       setText("");
@@ -203,7 +291,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     }
   };
 
-  // Delete for everyone: hard delete (sender only)
+  // Delete for everyone: hard delete (sender only) + remove blob if present
   const deleteForEveryone = async (m: Msg) => {
     if (!user) return;
     if (m.senderId !== user.uid) {
@@ -213,6 +301,13 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     if (!confirm("Delete this message for everyone?")) return;
     try {
       await deleteDoc(doc(db, "conversations", convoId, "messages", m.id));
+      if (m.attachment?.pathname) {
+        await fetch("/api/blob-delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pathname: m.attachment.pathname }),
+        });
+      }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       alert("Failed to delete for everyone: " + (e.code || e.message || e));
@@ -304,7 +399,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {msgs
-          .filter((m) => (myUid ? !(m.deletedFor || []).includes(myUid) : true)) // hide messages "deleted for me"
+          .filter((m) => (myUid ? !(m.deletedFor || []).includes(myUid) : true)) // hide "deleted for me"
           .map((m) => {
             const mine = m.senderId === user?.uid;
             const isEditing = editingId === m.id;
@@ -313,11 +408,47 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
             return (
               <div key={m.id} className={`max-w-[75%] ${mine ? "ml-auto" : ""} relative group`}>
                 <div className={`p-2 rounded ${mine ? "bg-blue-100" : "bg-gray-100"}`}>
-                  {/* Reply preview inside bubble */}
+                  {/* Reply preview */}
                   <ReplyPreviewInBubble m={m} />
 
-                  {/* Text or editor */}
-                  {!isEditing ? (
+                  {/* Attachment preview */}
+                  {m.attachment ? (
+                    <div className="space-y-1">
+                      {isImage(m.attachment.contentType) && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={m.attachment.url}
+                          alt={m.attachment.name}
+                          className="max-h-64 rounded border"
+                          loading="lazy"
+                        />
+                      )}
+
+                      {isVideo(m.attachment.contentType) && (
+                        <video
+                          src={m.attachment.url}
+                          controls
+                          className="max-h-64 rounded border"
+                        />
+                      )}
+
+                      {!isImage(m.attachment.contentType) &&
+                        !isVideo(m.attachment.contentType) && (
+                          <a
+                            href={m.attachment.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-2 underline text-blue-600"
+                          >
+                            📎 {m.attachment.name}
+                          </a>
+                        )}
+
+                      {(!isEditing && m.text) && (
+                        <div className="whitespace-pre-wrap">{m.text}</div>
+                      )}
+                    </div>
+                  ) : !isEditing ? (
                     <>
                       <div className="whitespace-pre-wrap">{m.text}</div>
                       <div className="mt-1 flex items-center gap-2 text-[10px] text-gray-500">
@@ -325,7 +456,10 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
                         {isStarredByMe && <span>★ starred</span>}
                       </div>
                     </>
-                  ) : (
+                  ) : null}
+
+                  {/* Editor */}
+                  {isEditing && (
                     <div className="flex flex-col gap-2">
                       <textarea
                         value={editText}
@@ -446,6 +580,24 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
 
       {/* Composer */}
       <div className="p-3 border-t flex gap-2 items-end">
+        {/* Attach */}
+        <button
+          type="button"
+          onClick={pickFile}
+          className="border px-3 py-2 rounded"
+          title="Attach a file"
+        >
+          📎 Attach
+        </button>
+        <input
+  ref={fileInputRef}
+  type="file"
+  accept="image/*,video/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.zip"
+  className="hidden"
+  onChange={handleAttachChange}
+/>
+
+
         <textarea
           className="flex-1 border p-2 rounded resize-none"
           rows={2}
