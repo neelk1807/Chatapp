@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { db } from "../app/lib/firebase";
 import {
   collection,
@@ -22,10 +22,10 @@ import {
 import { useAuth } from "./AuthProvider";
 import VideoCallOverlay from "@/component/VideoCallOverlay";
 
-// ---------- Types ----------
+/* ----------------------------- Types ----------------------------- */
 type Attachment = {
   url: string;
-  pathname: string; // needed for delete
+  pathname: string;
   name: string;
   size: number;
   contentType: string;
@@ -36,17 +36,84 @@ type Msg = {
   text: string;
   senderId: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  createdAt?: any; // Firestore Timestamp
+  createdAt?: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   editedAt?: any;
   readBy?: string[];
   replyToId?: string | null;
   replyPreview?: { text: string; senderId: string } | null;
   starredBy?: string[];
-  deletedFor?: string[]; // per-user hide list for "Delete for me"
-  attachment?: Attachment | null; // 👈 NEW
+  deletedFor?: string[];
+  attachment?: Attachment | null;
 };
 
+/* ---------------------- Floating menu helper --------------------- */
+/** Renders a floating menu next to an anchor rect, auto-flipping left/right. */
+function FloatingMenu({
+  anchor,
+  width = 200,
+  onClose,
+  children,
+}: {
+  anchor: DOMRect;
+  width?: number;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [style, setStyle] = useState<React.CSSProperties>({
+    position: "fixed",
+    left: 0,
+    top: 0,
+    width,
+  });
+
+  useLayoutEffect(() => {
+    const MARGIN = 8;
+
+    const place = () => {
+      // Prefer opening to the right; flip to left if not enough space
+      const openRight = anchor.right + MARGIN + width <= window.innerWidth;
+      const left = openRight
+        ? Math.min(anchor.right + MARGIN, window.innerWidth - width - MARGIN)
+        : Math.max(MARGIN, anchor.left - width - MARGIN);
+
+      // Vertical position: try below; clamp to viewport
+      const menuH = ref.current?.offsetHeight ?? 0;
+      let top = anchor.top;
+      if (top + menuH + MARGIN > window.innerHeight) {
+        top = Math.max(MARGIN, window.innerHeight - menuH - MARGIN);
+      }
+      setStyle({ position: "fixed", left, top, width });
+    };
+
+    place();
+    const ro = new ResizeObserver(place);
+    if (ref.current) ro.observe(ref.current);
+    const onResize = () => place();
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", onResize);
+    };
+  }, [anchor, width]);
+
+  return (
+    <div className="fixed inset-0 z-50" onClick={onClose}>
+      <div
+        ref={ref}
+        style={style}
+        className="bg-white border rounded shadow-md overflow-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------- Component -------------------------- */
 export default function ChatWindow({ convoId }: { convoId: string }) {
   const { user } = useAuth();
 
@@ -60,26 +127,15 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
 
   // Reply/Edit/menu state
   const [replyTo, setReplyTo] = useState<Msg | null>(null);
-  const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
 
+  // Floating menu state
+  const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  const [selectedMsg, setSelectedMsg] = useState<Msg | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<DOMRect | null>(null);
+
   const bottomRef = useRef<HTMLDivElement>(null);
-  // put this inside ChatWindow
-  const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (
-    e
-  ) => {
-    const input = e.currentTarget; // keep a stable reference
-    const file = input.files?.[0] ?? null;
-
-    // reset RIGHT NOW (before any await / promise)
-    input.value = "";
-
-    if (!file) return;
-
-    // don't await here; let it run in background
-    void uploadAndSend(file);
-  };
 
   // Attachment picker
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -115,7 +171,6 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     const unsub = onSnapshot(
       q,
       (snap) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const rows = snap.docs.map((d) => ({
           id: d.id,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -132,18 +187,18 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     return () => unsub();
   }, [convoId]);
 
-  // Close any open menu when clicking elsewhere
-  useEffect(() => {
-    const handler = () => setMenuOpen(null);
-    window.addEventListener("click", handler);
-    return () => window.removeEventListener("click", handler);
-  }, []);
-
   // ---------- Attach: upload to Vercel Blob then send message ----------
+  const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+    const input = e.currentTarget;
+    const file = input.files?.[0] ?? null;
+    input.value = ""; // reset immediately
+    if (!file) return;
+    void uploadAndSend(file);
+  };
+
   const uploadAndSend = async (file: File) => {
     if (!user) return;
     try {
-      // 1) upload to Blob through API route
       const fd = new FormData();
       fd.append("file", file);
       fd.append("convoId", convoId);
@@ -156,7 +211,6 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
       }
       const uploaded = await res.json(); // { url, pathname, name, size, contentType }
 
-      // 2) create a message with attachment metadata (optional caption from current text)
       const caption = text.trim();
       setSending(true);
 
@@ -167,10 +221,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         readBy: [user.uid],
         replyToId: replyTo?.id ?? null,
         replyPreview: replyTo
-          ? {
-              text: replyTo.text?.slice(0, 140) ?? "",
-              senderId: replyTo.senderId,
-            }
+          ? { text: replyTo.text?.slice(0, 140) ?? "", senderId: replyTo.senderId }
           : null,
         starredBy: [],
         deletedFor: [],
@@ -188,13 +239,9 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
 
       await updateDoc(doc(db, "conversations", convoId), {
         updatedAt: serverTimestamp(),
-        lastMessage: {
-          text: uploaded.name,
-          by: user.uid,
-          at: serverTimestamp(),
-        },
+        lastMessage: { text: uploaded.name, by: user.uid, at: serverTimestamp() },
       });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       alert("Failed to send attachment: " + (e?.message || e));
     } finally {
@@ -203,7 +250,6 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
   };
 
   // ------------------- Send / Reply / Edit / Star -------------------
-
   const send = async () => {
     if (!user || !text.trim() || sending) return;
     setSending(true);
@@ -217,10 +263,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         readBy: [user.uid],
         replyToId: replyTo?.id ?? null,
         replyPreview: replyTo
-          ? {
-              text: replyTo.text?.slice(0, 140) ?? "",
-              senderId: replyTo.senderId,
-            }
+          ? { text: replyTo.text?.slice(0, 140) ?? "", senderId: replyTo.senderId }
           : null,
         starredBy: [],
         deletedFor: [],
@@ -234,7 +277,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         updatedAt: serverTimestamp(),
         lastMessage: { text: value, by: user.uid, at: serverTimestamp() },
       });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       alert("Failed to send: " + (e.code || e.message || e));
     } finally {
@@ -245,7 +288,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
   const startEdit = (m: Msg) => {
     setEditingId(m.id);
     setEditText(m.text);
-    setMenuOpen(null);
+    closeMenu();
   };
 
   const cancelEdit = () => {
@@ -271,7 +314,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         editedAt: serverTimestamp(),
       });
       cancelEdit();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       alert("Failed to edit: " + (e.code || e.message || e));
     }
@@ -285,32 +328,29 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
       await updateDoc(ref, {
         starredBy: isStarredByMe ? arrayRemove(user.uid) : arrayUnion(user.uid),
       });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       alert("Failed to toggle star: " + (e.code || e.message || e));
     } finally {
-      setMenuOpen(null);
+      closeMenu();
     }
   };
 
   // ---- Delete options ----
-
-  // Delete for me: add my uid to deletedFor[]
   const deleteForMe = async (m: Msg) => {
     if (!user) return;
     try {
       await updateDoc(doc(db, "conversations", convoId, "messages", m.id), {
         deletedFor: arrayUnion(user.uid),
       });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       alert("Failed to delete for me: " + (e.code || e.message || e));
     } finally {
-      setMenuOpen(null);
+      closeMenu();
     }
   };
 
-  // Delete for everyone: hard delete (sender only) + remove blob if present
   const deleteForEveryone = async (m: Msg) => {
     if (!user) return;
     if (m.senderId !== user.uid) {
@@ -327,21 +367,18 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
           body: JSON.stringify({ pathname: m.attachment.pathname }),
         });
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       alert("Failed to delete for everyone: " + (e.code || e.message || e));
     } finally {
-      setMenuOpen(null);
+      closeMenu();
     }
   };
 
   // ------------------- Clear chat (keep starred) -------------------
-
   const clearChat = async () => {
     if (
-      !confirm(
-        "Clear all messages in this conversation? (Starred messages will be kept)"
-      )
+      !confirm("Clear all messages in this conversation? (Starred messages will be kept)")
     )
       return;
     setClearing(true);
@@ -352,13 +389,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
 
       while (true) {
         let q = query(messagesCol, orderBy("createdAt"), limit(400));
-        if (last)
-          q = query(
-            messagesCol,
-            orderBy("createdAt"),
-            startAfter(last),
-            limit(400)
-          );
+        if (last) q = query(messagesCol, orderBy("createdAt"), startAfter(last), limit(400));
         const snap = await getDocs(q);
         if (snap.empty) break;
 
@@ -366,7 +397,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         snap.docs.forEach((d) => {
           const data = d.data() as Msg;
           const starredCount = (data.starredBy || []).length;
-          if (starredCount === 0) batch.delete(d.ref); // delete only non-starred
+          if (starredCount === 0) batch.delete(d.ref);
         });
         await batch.commit();
 
@@ -377,7 +408,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         updatedAt: serverTimestamp(),
       });
       alert("Chat cleared (starred messages kept).");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       alert("Failed to clear chat: " + (e.code || e.message || e));
     } finally {
@@ -385,8 +416,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     }
   };
 
-  // ------------------- Render helpers -------------------
-
+  /* -------------------------- Render helpers -------------------------- */
   const canEdit = (m: Msg) =>
     m.senderId === user?.uid &&
     m.createdAt?.toMillis &&
@@ -395,20 +425,28 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
   const ReplyPreviewInBubble = ({ m }: { m: Msg }) =>
     m.replyPreview ? (
       <div className="mb-1 text-[11px] px-2 py-1 rounded bg-white/60 border">
-        Replying to {m.replyPreview.senderId === user?.uid ? "you" : "them"}: “
-        {m.replyPreview.text}”
+        Replying to {m.replyPreview.senderId === user?.uid ? "you" : "them"}: “{m.replyPreview.text}”
       </div>
     ) : null;
 
-  // ------------------- UI -------------------
+  // Floating menu handlers
+  const openMenu = (e: React.MouseEvent<HTMLButtonElement>, m: Msg) => {
+    e.stopPropagation();
+    setSelectedMsg(m);
+    setMenuOpen(m.id);
+    setMenuAnchor((e.currentTarget as HTMLElement).getBoundingClientRect());
+  };
+  const closeMenu = () => {
+    setMenuOpen(null);
+    setSelectedMsg(null);
+    setMenuAnchor(null);
+  };
 
   const myUid = user?.uid;
 
+  /* ------------------------------ UI -------------------------------- */
   return (
-    <div
-      className="flex flex-col h-full relative"
-      onClick={() => setMenuOpen(null)}
-    >
+    <div className="flex flex-col h-full relative" onClick={closeMenu}>
       {/* Header */}
       <div className="p-3 border-b flex items-center justify-between">
         <div className="font-semibold">Chat</div>
@@ -420,7 +458,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
             Video
           </button>
           <button
-            className="text-xs underline disabled:opacity-50 "
+            className="text-xs underline disabled:opacity-50"
             onClick={clearChat}
             disabled={clearing}
             title="Delete all non-starred messages"
@@ -433,25 +471,15 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {msgs
-          .filter((m) => (myUid ? !(m.deletedFor || []).includes(myUid) : true)) // hide "deleted for me"
+          .filter((m) => (myUid ? !(m.deletedFor || []).includes(myUid) : true))
           .map((m) => {
             const mine = m.senderId === user?.uid;
             const isEditing = editingId === m.id;
-            const isStarredByMe =
-              !!user && (m.starredBy || []).includes(user.uid);
+            const isStarredByMe = !!user && (m.starredBy || []).includes(user.uid);
 
             return (
-              <div
-                key={m.id}
-                className={`max-w-[75%] ${
-                  mine ? "ml-auto" : ""
-                } relative group`}
-              >
-                <div
-                  className={`p-2 rounded ${
-                    mine ? "bg-blue-100" : "bg-gray-100"
-                  }`}
-                >
+              <div key={m.id} className={`max-w-max ${mine ? "ml-auto" : ""} relative group`}>
+                <div className={`px-6 py-4 rounded ${mine ? "bg-blue-100" : "bg-gray-100"}`}>
                   {/* Reply preview */}
                   <ReplyPreviewInBubble m={m} />
 
@@ -463,30 +491,25 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
                         <img
                           src={m.attachment.url}
                           alt={m.attachment.name}
-                          className="max-h-64 rounded border"
+                          className="max-h-64 rounded"
                           loading="lazy"
                         />
                       )}
 
                       {isVideo(m.attachment.contentType) && (
-                        <video
-                          src={m.attachment.url}
-                          controls
-                          className="max-h-64 rounded border"
-                        />
+                        <video src={m.attachment.url} controls className="max-h-64 rounded" />
                       )}
 
-                      {!isImage(m.attachment.contentType) &&
-                        !isVideo(m.attachment.contentType) && (
-                          <a
-                            href={m.attachment.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-2 underline text-blue-600"
-                          >
-                            📎 {m.attachment.name}
-                          </a>
-                        )}
+                      {!isImage(m.attachment.contentType) && !isVideo(m.attachment.contentType) && (
+                        <a
+                          href={m.attachment.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-2 underline text-blue-600"
+                        >
+                          <img src="fileicon.svg"></img> {m.attachment.name}
+                        </a>
+                      )}
 
                       {!isEditing && m.text && (
                         <div className="whitespace-pre-wrap">{m.text}</div>
@@ -536,79 +559,74 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
                   )}
                 </div>
 
-                {/* Three-dot horizontal menu trigger */}
+                {/* 3-dots trigger */}
                 <button
                   className="absolute -bottom-2 -right-1 h-8 w-8 place-items-center text-black opacity-70 hover:opacity-100 cursor-pointer"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setMenuOpen(menuOpen === m.id ? null : m.id);
-                  }}
+                  onClick={(e) => openMenu(e, m)}
                   title="Message actions"
                 >
                   ⋯
                 </button>
-
-                {/* Actions menu */}
-                {menuOpen === m.id && (
-                  <div
-                    className="absolute right-0 mt-1 bg-white border rounded shadow text-sm z-10 min-w-40 cursor-pointer"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      onClick={() => toggleStar(m)}
-                      className="block w-full text-left hover:bg-gray-100 px-3 py-2 cursor-pointer"
-                    >
-                      {isStarredByMe ? "Unstar" : "Star"}
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        setReplyTo(m);
-                        setMenuOpen(null);
-                      }}
-                      className="block w-full text-left hover:bg-gray-100 px-3 py-2 cursor-pointer"
-                    >
-                      Reply
-                    </button>
-
-                    {mine && canEdit(m) && !isEditing && (
-                      <button
-                        onClick={() => startEdit(m)}
-                        className="block w-full text-left hover:bg-gray-100 px-3 py-2 cursor-pointer"
-                      >
-                        Edit
-                      </button>
-                    )}
-
-                    <button
-                      onClick={() => deleteForMe(m)}
-                      className="block w-full text-left hover:bg-gray-100 px-3 py-2 cursor-pointer"
-                    >
-                      Delete for me
-                    </button>
-
-                    {mine && (
-                      <button
-                        onClick={() => deleteForEveryone(m)}
-                        className="block w-full text-left hover:bg-gray-100 px-3 py-2 text-red-600 cursor-pointer"
-                      >
-                        Delete for everyone
-                      </button>
-                    )}
-                  </div>
-                )}
               </div>
             );
           })}
         <div ref={bottomRef} />
       </div>
 
+      {/* Floating actions menu (single instance) */}
+      {menuOpen && selectedMsg && menuAnchor && (
+        <FloatingMenu anchor={menuAnchor} onClose={closeMenu}>
+          <button
+            onClick={() => toggleStar(selectedMsg)}
+            className="block w-full text-left hover:bg-gray-100 px-3 py-2"
+          >
+            {(selectedMsg.starredBy || []).includes(user!.uid) ? "Unstar" : "Star"}
+          </button>
+
+          <button
+            onClick={() => {
+              setReplyTo(selectedMsg);
+              closeMenu();
+            }}
+            className="block w-full text-left hover:bg-gray-100 px-3 py-2"
+          >
+            Reply
+          </button>
+
+          {selectedMsg.senderId === user?.uid &&
+            canEdit(selectedMsg) &&
+            editingId !== selectedMsg.id && (
+              <button
+                onClick={() => startEdit(selectedMsg)}
+                className="block w-full text-left hover:bg-gray-100 px-3 py-2"
+              >
+                Edit
+              </button>
+            )}
+
+          <button
+            onClick={() => deleteForMe(selectedMsg)}
+            className="block w-full text-left hover:bg-gray-100 px-3 py-2"
+          >
+            Delete for me
+          </button>
+
+          {selectedMsg.senderId === user?.uid && (
+            <button
+              onClick={() => deleteForEveryone(selectedMsg)}
+              className="block w-full text-left hover:bg-gray-100 px-3 py-2 text-red-600"
+            >
+              Delete for everyone
+            </button>
+          )}
+        </FloatingMenu>
+      )}
+
       {/* Reply banner in composer */}
       {replyTo && (
         <div className="px-3 py-2 border-t bg-yellow-50 text-[12px] flex items-center justify-between gap-3">
           <div className="truncate">
-            Replying to:{" "}
-            <span className="italic">“{replyTo.text?.slice(0, 140)}”</span>
+            Replying to: <span className="italic">“{replyTo.text?.slice(0, 140)}”</span>
           </div>
           <button className="underline" onClick={() => setReplyTo(null)}>
             Cancel
@@ -619,10 +637,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
       {/* Video Overlay */}
       {showVideo && (
         <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50">
-          <VideoCallOverlay
-            convoId={convoId}
-            onClose={() => setShowVideo(false)}
-          />
+          <VideoCallOverlay convoId={convoId} onClose={() => setShowVideo(false)} />
         </div>
       )}
 
@@ -635,7 +650,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
           className="border px-3 py-2 rounded cursor-pointer"
           title="Attach a file"
         >
-        <img src="./attachment-svgrepo-com.svg" className="w-7"></img>
+          <img src="./attachment-svgrepo-com.svg" className="w-7" />
         </button>
         <input
           ref={fileInputRef}
@@ -661,10 +676,10 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
               send();
             }
           }}
-          onClick={() => setMenuOpen(null)}
+          onClick={closeMenu}
         />
         <button
-          className="border px-4 py-2 rounded disabled:opacity-50"
+          className="border px-4 py-2 rounded disabled:opacity-50 cursor-pointer"
           onClick={send}
           disabled={sending || !text.trim()}
         >
