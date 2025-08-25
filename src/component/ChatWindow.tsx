@@ -834,7 +834,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
                         )}
                       </div>
                       <iframe
-                        className="rounded border w-full max-w-md h-44"
+                        className="rounded  w-full max-w-md h-44"
                         src={mapEmbed(m.location)}
                         loading="lazy"
                         key={`${m.location.lat.toFixed(5)}-${m.location.lng.toFixed(5)}`}
@@ -996,7 +996,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
           </button>
           {locMenuOpen && canType && (
             <div
-              className="absolute left-0 bottom-[50px] mt-2 bg-white border rounded shadow z-20 w-44"
+              className="absolute left-0 bottom-[50px] mt-2 bg-white rounded shadow z-20 w-44"
               onClick={(e) => e.stopPropagation()}
             >
               <button className="block w-full text-left px-3 py-2 hover:bg-gray-100 cursor-pointer" onClick={sendCurrentLocation}>
@@ -1019,7 +1019,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         <textarea
           className="flex-1 border p-2 rounded resize-none disabled:opacity-50"
           rows={1}
-          placeholder="Type a message… (Enter to send, Shift+Enter for new line)"
+          placeholder="Type a message…"
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
