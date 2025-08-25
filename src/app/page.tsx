@@ -18,14 +18,12 @@ export default function Home() {
   const [openConvo, setOpenConvo] = useState<string | null>(null);
   const [pane, setPane] = useState<Pane>("list");
 
-  // If you navigate to the page while logged out
   useEffect(() => {
     if (!loading && !user) router.push("/login");
   }, [loading, user, router]);
 
   if (loading || !user) return <div className="p-6">Loading…</div>;
 
-  // Navigation helpers
   const openChat = (id: string) => {
     setOpenConvo(id);
     setPane("chat");
@@ -35,46 +33,48 @@ export default function Home() {
   const closeProfile = () => setPane(openConvo ? "chat" : "list");
 
   return (
-    <main className="h-screen">
-      {/* Desktop/tablet: two columns; Mobile: we show one pane at a time */}
-      <div className="h-full md:grid md:grid-cols-[320px_1fr]">
+    <main className="h-screen overflow-hidden">
+      {/* Desktop/tablet: two columns; Mobile: show one pane at a time */}
+      <div className="h-full overflow-hidden md:grid md:grid-cols-[320px_1fr]">
         {/* LEFT PANE (list) */}
         <aside
-          className={`border-r flex flex-col h-full ${
+          className={`border-r h-full flex flex-col overflow-hidden ${
             pane === "list" ? "block" : "hidden"
           } md:block`}
         >
-          <div className="p-3 flex items-center justify-between border-b">
+          {/* fixed header */}
+          <div className="shrink-0 p-3 flex items-center justify-between border-b">
             <div className="font-bold">Chats</div>
             <button className="text-sm underline" onClick={openProfile}>
               Profile
             </button>
           </div>
 
-          {/* New chat & chats */}
-          <PeoplePicker onOpen={openChat} />
-          <Conversations onOpen={openChat} />
+          {/* scrollable content (people picker + conversations) */}
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <PeoplePicker onOpen={openChat} />
+            <Conversations onOpen={openChat} />
+          </div>
 
-          <div className="mt-auto p-3">
+          {/* fixed footer */}
+          <div className="shrink-0 p-3 border-t">
             <button className="text-sm underline" onClick={() => signOut(auth)}>
               Sign out
             </button>
           </div>
         </aside>
 
-        {/* RIGHT PANE (chat) */}
+        {/* RIGHT PANE (chat) – container fixed, ChatWindow handles its own scroll */}
         <section
-          className={`relative h-full ${
+          className={`relative h-full overflow-hidden ${
             pane === "chat" ? "block" : "hidden"
           } md:block`}
         >
-          {/* Mobile-only top bar with Back to list */}
+          {/* Mobile-only top bar */}
           <div className="md:hidden sticky top-0 z-20 bg-white border-b flex items-center justify-between px-3 py-2">
             <button onClick={backToList} className="text-sm underline">
               Back
             </button>
-            {/* If your ChatWindow shows the peer name itself, great;
-                otherwise this label is a generic fallback */}
             <div className="font-semibold truncate">Chat</div>
             <span className="w-10" />
           </div>
@@ -87,32 +87,40 @@ export default function Home() {
             </div>
           )}
 
-          {/* DESKTOP: Profile overlay (when opened) */}
+          {/* DESKTOP profile overlay – fills pane, scrolls internally */}
           {pane === "profile" && (
-            <div className="hidden md:block absolute inset-0 bg-white/95 backdrop-blur border-l z-30">
-              <div className="p-3 flex items-center justify-between border-b">
-                <div className="font-semibold">Your Profile</div>
-                <button className="text-sm underline" onClick={closeProfile}>
-                  Close
-                </button>
+            <div className="hidden md:flex absolute inset-0 z-30 bg-white">
+              <div className="flex flex-col w-full h-full">
+                <div className="shrink-0 p-3 flex items-center justify-between border-b">
+                  <div className="font-semibold">Your Profile</div>
+                  <button className="text-sm underline" onClick={closeProfile}>
+                    Close
+                  </button>
+                </div>
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                  <Profile />
+                </div>
               </div>
-              <Profile />
             </div>
           )}
         </section>
       </div>
 
-      {/* MOBILE: Fullscreen Profile pane */}
+      {/* MOBILE: Fullscreen profile pane – scrolls internally */}
       {pane === "profile" && (
         <div className="md:hidden fixed inset-0 z-30 bg-white">
-          <div className="sticky top-0 bg-white border-b flex items-center justify-between px-3 py-2">
-            <button onClick={backToList} className="text-sm underline">
-              Back
-            </button>
-            <div className="font-semibold">Your Profile</div>
-            <span className="w-10" />
+          <div className="flex flex-col w-full h-full">
+            <div className="shrink-0 sticky top-0 bg-white border-b flex items-center justify-between px-3 py-2">
+              <button onClick={backToList} className="text-sm underline">
+                Back
+              </button>
+              <div className="font-semibold">Your Profile</div>
+              <span className="w-10" />
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <Profile />
+            </div>
           </div>
-          <Profile />
         </div>
       )}
     </main>
