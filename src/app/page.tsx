@@ -58,7 +58,7 @@ export default function Home() {
 
           {/* fixed footer */}
           <div className="shrink-0 p-3 border-t">
-            <button className="text-sm underline" onClick={() => signOut(auth)}>
+            <button className="text-sm underline cursor-pointer" onClick={() => signOut(auth)}>
               Sign out
             </button>
           </div>

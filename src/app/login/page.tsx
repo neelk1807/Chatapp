@@ -7,7 +7,7 @@ import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [phone, setPhone] = useState("");      // e.g. +919900112233
+  const [phone, setPhone] = useState("+91");      // e.g. +919900112233
   const [code, setCode] = useState("");        // e.g. 123456 (your TEST code)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [confirmRes, setConfirmRes] = useState<any>(null);
