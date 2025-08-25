@@ -688,7 +688,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
                         {isLive ? liveBadge(m) : "Live location ended"}
                         {mine && isLive && (
                           <button
-                            className="ml-2 underline"
+                            className="ml-2 underline cursor-pointer cursor-pointer"
                             onClick={(e) => {
                               e.stopPropagation();
                               stopLiveSharing("user-stop");
@@ -791,7 +791,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
       {/* Floating actions menu */}
       {menuOpen && selectedMsg && menuAnchor && (
         <FloatingMenu anchor={menuAnchor} onClose={closeMenu}>
-          <button onClick={() => toggleStar(selectedMsg)} className="block w-full text-left hover:bg-gray-100 px-3 py-2">
+          <button onClick={() => toggleStar(selectedMsg)} className="block w-full text-left hover:bg-gray-100 px-3 py-2 cursor-pointer">
             {(selectedMsg.starredBy || []).includes(user!.uid) ? "Unstar" : "Star"}
           </button>
 
@@ -800,13 +800,13 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
               setReplyTo(selectedMsg);
               closeMenu();
             }}
-            className="block w-full text-left hover:bg-gray-100 px-3 py-2"
+            className="block w-full text-left hover:bg-gray-100 px-3 py-2 cursor-pointer"
           >
             Reply
           </button>
 
           {selectedMsg.senderId === user?.uid && selectedMsg.kind !== "live-location" && editingId !== selectedMsg.id && (
-            <button onClick={() => startEdit(selectedMsg)} className="block w-full text-left hover:bg-gray-100 px-3 py-2">
+            <button onClick={() => startEdit(selectedMsg)} className="block w-full text-left hover:bg-gray-100 px-3 py-2 cursor-pointer">
               Edit
             </button>
           )}
@@ -819,20 +819,20 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
                 onClick={() => {
                   stopLiveSharing("menu-stop");
                 }}
-                className="block w-full text-left hover:bg-gray-100 px-3 py-2"
+                className="block w-full text-left hover:bg-gray-100 px-3 py-2 cursor-pointer" 
               >
                 Stop live location
               </button>
             )}
 
-          <button onClick={() => deleteForMe(selectedMsg)} className="block w-full text-left hover:bg-gray-100 px-3 py-2">
+          <button onClick={() => deleteForMe(selectedMsg)} className="block w-full text-left hover:bg-gray-100 px-3 py-2 cursor-pointer">
             Delete for me
           </button>
 
           {selectedMsg.senderId === user?.uid && (
             <button
               onClick={() => deleteForEveryone(selectedMsg)}
-              className="block w-full text-left hover:bg-gray-100 px-3 py-2 text-red-600"
+              className="block w-full text-left hover:bg-gray-100 px-3 py-2 text-red-600 cursor-pointer"
             >
               Delete for everyone
             </button>
@@ -846,7 +846,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
           <div className="truncate">
             Replying to: <span className="italic">“{replyTo.text?.slice(0, 140)}”</span>
           </div>
-          <button className="underline" onClick={() => setReplyTo(null)}>
+          <button className="underline cursor-pointer" onClick={() => setReplyTo(null)}>
             Cancel
           </button>
         </div>
