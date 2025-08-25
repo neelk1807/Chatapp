@@ -1,3 +1,6 @@
+
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { db } from "../app/lib/firebase";
@@ -31,6 +34,19 @@ type Attachment = {
   contentType: string;
 };
 
+type GeoPointLite = { lat: number; lng: number; accuracy?: number };
+
+type LiveMeta = {
+  isActive: boolean;
+  minutes: number;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  startedAt?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  expiresAt?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  endedAt?: any | null;
+};
+
 type Msg = {
   id: string;
   text: string;
@@ -45,10 +61,14 @@ type Msg = {
   starredBy?: string[];
   deletedFor?: string[];
   attachment?: Attachment | null;
+
+  /* 🧭 Location: */
+  kind?: "text" | "location" | "live-location";
+  location?: GeoPointLite | null;
+  live?: LiveMeta | null;
 };
 
 /* ---------------------- Floating menu helper --------------------- */
-/** Renders a floating menu next to an anchor rect, auto-flipping left/right. */
 function FloatingMenu({
   anchor,
   width = 200,
@@ -72,13 +92,12 @@ function FloatingMenu({
     const MARGIN = 8;
 
     const place = () => {
-      // Prefer opening to the right; flip to left if not enough space
-      const openRight = anchor.right + MARGIN + width <= window.innerWidth;
+      const menuW = width;
+      const openRight = anchor.right + MARGIN + menuW <= window.innerWidth;
       const left = openRight
-        ? Math.min(anchor.right + MARGIN, window.innerWidth - width - MARGIN)
-        : Math.max(MARGIN, anchor.left - width - MARGIN);
+        ? Math.min(anchor.right + MARGIN, window.innerWidth - menuW - MARGIN)
+        : Math.max(MARGIN, anchor.left - menuW - MARGIN);
 
-      // Vertical position: try below; clamp to viewport
       const menuH = ref.current?.offsetHeight ?? 0;
       let top = anchor.top;
       if (top + menuH + MARGIN > window.innerHeight) {
@@ -92,7 +111,6 @@ function FloatingMenu({
     if (ref.current) ro.observe(ref.current);
     const onResize = () => place();
     window.addEventListener("resize", onResize);
-
     return () => {
       ro.disconnect();
       window.removeEventListener("resize", onResize);
@@ -141,9 +159,23 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pickFile = () => fileInputRef.current?.click();
 
-  // Helpers for rendering
+  // 🧭 Location: picker/menu
+  const [locMenuOpen, setLocMenuOpen] = useState(false);
+  const locBtnRef = useRef<HTMLButtonElement>(null);
+
+  // 🧭 Location: live sharing session
+  const liveWatchIdRef = useRef<number | null>(null);
+  const liveMsgIdRef = useRef<string | null>(null);
+  const liveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   const isImage = (ct?: string) => !!ct && ct.startsWith("image/");
   const isVideo = (ct?: string) => !!ct && ct.startsWith("video/");
+
+  const mapEmbed = (p: GeoPointLite, z = 15) =>
+    `https://maps.google.com/maps?q=${p.lat},${p.lng}&z=${z}&output=embed`;
+  const mapsLink = (p: GeoPointLite) => `https://maps.google.com/?q=${p.lat},${p.lng}`;
+
+  const nowMs = () => Date.now();
 
   // Auto-open overlay on incoming ringing call
   useEffect(() => {
@@ -152,9 +184,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     const qy = query(callsCol, where("status", "==", "ringing"));
     const unsub = onSnapshot(qy, (snap) => {
       const inc = snap.docs
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .map((d) => ({ id: d.id, ...(d.data() as any) }))
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .find((c: any) => c.createdBy !== user.uid);
       if (inc) setShowVideo(true);
     });
@@ -164,34 +194,39 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
   // Messages listener
   useEffect(() => {
     if (!convoId) return;
-    const q = query(
-      collection(db, "conversations", convoId, "messages"),
-      orderBy("createdAt")
-    );
+    const q = query(collection(db, "conversations", convoId, "messages"), orderBy("createdAt"));
     const unsub = onSnapshot(
       q,
       (snap) => {
-        const rows = snap.docs.map((d) => ({
-          id: d.id,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ...(d.data() as any),
-        })) as Msg[];
+        const rows = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Msg[];
         setMsgs(rows);
-        setTimeout(
-          () => bottomRef.current?.scrollIntoView({ behavior: "smooth" }),
-          0
-        );
+        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 0);
       },
       (err) => console.error("messages listener error:", err)
     );
     return () => unsub();
   }, [convoId]);
 
-  // ---------- Attach: upload to Vercel Blob then send message ----------
+  // Close floating menu on outside click
+  useEffect(() => {
+    const handler = () => setMenuOpen(null);
+    window.addEventListener("click", handler);
+    return () => window.removeEventListener("click", handler);
+  }, []);
+
+  // Cleanup live sharing on unmount / convo switch
+  useEffect(() => {
+    return () => {
+      // Call stopLiveSharing but do not await it, so the cleanup is synchronous
+      void stopLiveSharing("component-unmount");
+    };
+  }, [convoId]);
+
+  /* -------------------- Attach (kept from before) -------------------- */
   const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
     const input = e.currentTarget;
     const file = input.files?.[0] ?? null;
-    input.value = ""; // reset immediately
+    input.value = "";
     if (!file) return;
     void uploadAndSend(file);
   };
@@ -202,19 +237,19 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("convoId", convoId);
-
       const res = await fetch("/api/blob-upload", { method: "POST", body: fd });
       if (!res.ok) {
         const e = await res.json().catch(() => ({}));
         alert("Upload failed: " + (e.error || res.statusText));
         return;
       }
-      const uploaded = await res.json(); // { url, pathname, name, size, contentType }
+      const uploaded = await res.json();
 
       const caption = text.trim();
       setSending(true);
 
       await addDoc(collection(db, "conversations", convoId, "messages"), {
+        kind: "text",
         text: caption,
         senderId: user.uid,
         createdAt: serverTimestamp(),
@@ -241,7 +276,6 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         updatedAt: serverTimestamp(),
         lastMessage: { text: uploaded.name, by: user.uid, at: serverTimestamp() },
       });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       alert("Failed to send attachment: " + (e?.message || e));
     } finally {
@@ -249,7 +283,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     }
   };
 
-  // ------------------- Send / Reply / Edit / Star -------------------
+  /* ------------------- Sending text / edit / star ------------------- */
   const send = async () => {
     if (!user || !text.trim() || sending) return;
     setSending(true);
@@ -257,6 +291,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
 
     try {
       await addDoc(collection(db, "conversations", convoId, "messages"), {
+        kind: "text",
         text: value,
         senderId: user.uid,
         createdAt: serverTimestamp(),
@@ -277,7 +312,6 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         updatedAt: serverTimestamp(),
         lastMessage: { text: value, by: user.uid, at: serverTimestamp() },
       });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       alert("Failed to send: " + (e.code || e.message || e));
     } finally {
@@ -290,31 +324,24 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     setEditText(m.text);
     closeMenu();
   };
-
   const cancelEdit = () => {
     setEditingId(null);
     setEditText("");
   };
-
   const saveEdit = async (m: Msg) => {
     if (!user) return;
     const canEdit =
-      m.senderId === user.uid &&
-      m.createdAt?.toMillis &&
-      Date.now() - m.createdAt.toMillis() <= 10_000;
-
+      m.senderId === user.uid && m.createdAt?.toMillis && Date.now() - m.createdAt.toMillis() <= 10_000;
     if (!canEdit) {
       alert("You can edit only your own message within 10 seconds.");
       return;
     }
-
     try {
       await updateDoc(doc(db, "conversations", convoId, "messages", m.id), {
         text: editText.trim(),
         editedAt: serverTimestamp(),
       });
       cancelEdit();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       alert("Failed to edit: " + (e.code || e.message || e));
     }
@@ -328,7 +355,6 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
       await updateDoc(ref, {
         starredBy: isStarredByMe ? arrayRemove(user.uid) : arrayUnion(user.uid),
       });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       alert("Failed to toggle star: " + (e.code || e.message || e));
     } finally {
@@ -336,7 +362,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     }
   };
 
-  // ---- Delete options ----
+  /* ---------------------- Delete for me/everyone ---------------------- */
   const deleteForMe = async (m: Msg) => {
     if (!user) return;
     try {
@@ -375,24 +401,19 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     }
   };
 
-  // ------------------- Clear chat (keep starred) -------------------
+  /* ------------------------- Clear chat (starred kept) ------------------------- */
   const clearChat = async () => {
-    if (
-      !confirm("Clear all messages in this conversation? (Starred messages will be kept)")
-    )
-      return;
+    if (!confirm("Clear all messages in this conversation? (Starred messages will be kept)")) return;
     setClearing(true);
     try {
       const messagesCol = collection(db, "conversations", convoId, "messages");
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let last: any = null;
-
       while (true) {
         let q = query(messagesCol, orderBy("createdAt"), limit(400));
         if (last) q = query(messagesCol, orderBy("createdAt"), startAfter(last), limit(400));
         const snap = await getDocs(q);
         if (snap.empty) break;
-
         const batch = writeBatch(db);
         snap.docs.forEach((d) => {
           const data = d.data() as Msg;
@@ -400,13 +421,9 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
           if (starredCount === 0) batch.delete(d.ref);
         });
         await batch.commit();
-
         last = snap.docs[snap.docs.length - 1];
       }
-
-      await updateDoc(doc(db, "conversations", convoId), {
-        updatedAt: serverTimestamp(),
-      });
+      await updateDoc(doc(db, "conversations", convoId), { updatedAt: serverTimestamp() });
       alert("Chat cleared (starred messages kept).");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
@@ -416,20 +433,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     }
   };
 
-  /* -------------------------- Render helpers -------------------------- */
-  const canEdit = (m: Msg) =>
-    m.senderId === user?.uid &&
-    m.createdAt?.toMillis &&
-    Date.now() - m.createdAt.toMillis() <= 10_000;
-
-  const ReplyPreviewInBubble = ({ m }: { m: Msg }) =>
-    m.replyPreview ? (
-      <div className="mb-1 text-[11px] px-2 py-1 rounded bg-white/60 border">
-        Replying to {m.replyPreview.senderId === user?.uid ? "you" : "them"}: “{m.replyPreview.text}”
-      </div>
-    ) : null;
-
-  // Floating menu handlers
+  /* ---------------------------- Floating menu ---------------------------- */
   const openMenu = (e: React.MouseEvent<HTMLButtonElement>, m: Msg) => {
     e.stopPropagation();
     setSelectedMsg(m);
@@ -442,9 +446,185 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     setMenuAnchor(null);
   };
 
-  const myUid = user?.uid;
+  /* ======================= 🧭 Location features ======================= */
+
+  const ensureGeo = (): Geolocation => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      throw new Error("Location requires HTTPS (or http://localhost). Open the app via HTTPS.");
+    }
+    return navigator.geolocation;
+  };
+
+  const getOnce = (): Promise<GeoPointLite> =>
+    new Promise((resolve, reject) => {
+      try {
+        const g = ensureGeo();
+        g.getCurrentPosition(
+          (pos) =>
+            resolve({
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+            }),
+          (err) => reject(err),
+          { enableHighAccuracy: true, maximumAge: 10_000, timeout: 20_000 }
+        );
+      } catch (e) {
+        reject(e);
+      }
+    });
+
+  // Send current location
+  const sendCurrentLocation = async () => {
+    if (!user) return;
+    try {
+      const p = await getOnce();
+      await addDoc(collection(db, "conversations", convoId, "messages"), {
+        kind: "location",
+        text: text.trim() || "", // optional caption
+        senderId: user.uid,
+        createdAt: serverTimestamp(),
+        readBy: [user.uid],
+        replyToId: replyTo?.id ?? null,
+        replyPreview: replyTo
+          ? { text: replyTo.text?.slice(0, 140) ?? "", senderId: replyTo.senderId }
+          : null,
+        location: p,
+        live: null,
+        starredBy: [],
+        deletedFor: [],
+        attachment: null,
+      });
+      setText("");
+      setReplyTo(null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (e: any) {
+      alert(e?.message || "Failed to get location.");
+    } finally {
+      setLocMenuOpen(false);
+    }
+  };
+
+  // Start live sharing for N minutes
+  const startLiveLocation = async (minutes: 10 | 20 | 30) => {
+    if (!user) return;
+    try {
+      const p = await getOnce();
+      // create the message
+      const ref = await addDoc(collection(db, "conversations", convoId, "messages"), {
+        kind: "live-location",
+        text: text.trim() || "",
+        senderId: user.uid,
+        createdAt: serverTimestamp(),
+        readBy: [user.uid],
+        replyToId: replyTo?.id ?? null,
+        replyPreview: replyTo
+          ? { text: replyTo.text?.slice(0, 140) ?? "", senderId: replyTo.senderId }
+          : null,
+        location: p,
+        live: {
+          isActive: true,
+          minutes,
+          startedAt: serverTimestamp(),
+          // we'll compute expiresAt on client; server value is informative
+          expiresAt: serverTimestamp(),
+          endedAt: null,
+        } as LiveMeta,
+        starredBy: [],
+        deletedFor: [],
+        attachment: null,
+      });
+
+      setText("");
+      setReplyTo(null);
+      setLocMenuOpen(false);
+
+      liveMsgIdRef.current = ref.id;
+
+      // Setup watch + timer
+      const g = ensureGeo();
+      const endAtMs = nowMs() + minutes * 60_000;
+
+      // update expiresAt immediately (nice to have)
+      await updateDoc(ref, {
+        "live.expiresAt": new Date(endAtMs),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
+      liveWatchIdRef.current = g.watchPosition(
+        async (pos) => {
+          if (!liveMsgIdRef.current) return;
+          try {
+            await updateDoc(doc(db, "conversations", convoId, "messages", liveMsgIdRef.current), {
+              location: {
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+                accuracy: pos.coords.accuracy,
+              },
+              // touch updatedAt for UI freshness (optional)
+              updatedAt: serverTimestamp(),
+            });
+          } catch {}
+        },
+        (err) => {
+          console.warn("live watch error", err);
+        },
+        { enableHighAccuracy: true, maximumAge: 5_000, timeout: 20_000 }
+      );
+
+      // auto-stop timer
+      liveTimerRef.current = setTimeout(() => stopLiveSharing("auto-expire"), endAtMs - nowMs());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (e: any) {
+      alert(e?.message || "Failed to start live location.");
+    }
+  };
+
+  const stopLiveSharing = async (_why: string) => {
+    try {
+      if (liveWatchIdRef.current != null) {
+        try {
+          navigator.geolocation?.clearWatch(liveWatchIdRef.current);
+        } catch {}
+      }
+      if (liveTimerRef.current) {
+        clearTimeout(liveTimerRef.current);
+      }
+      liveWatchIdRef.current = null;
+      liveTimerRef.current = null;
+
+      if (liveMsgIdRef.current) {
+        try {
+          await updateDoc(doc(db, "conversations", convoId, "messages", liveMsgIdRef.current), {
+            "live.isActive": false,
+            "live.endedAt": serverTimestamp(),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } as any);
+        } catch {}
+      }
+    } finally {
+      liveMsgIdRef.current = null;
+    }
+  };
+
+  const msLeft = (m: Msg): number => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const exp = m.live?.expiresAt as any;
+    if (!exp?.toMillis) return 0;
+    return Math.max(0, exp.toMillis() - nowMs());
+  };
+
+  const liveBadge = (m: Msg) => {
+    const left = msLeft(m);
+    if (!left) return "Live location ended";
+    const mins = Math.floor(left / 60_000);
+    const secs = Math.floor((left % 60_000) / 1000);
+    return `Live location • ${mins}m ${secs}s left`;
+  };
 
   /* ------------------------------ UI -------------------------------- */
+  const myUid = user?.uid;
+
   return (
     <div className="flex flex-col h-full relative" onClick={closeMenu}>
       {/* Header */}
@@ -476,30 +656,68 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
             const mine = m.senderId === user?.uid;
             const isEditing = editingId === m.id;
             const isStarredByMe = !!user && (m.starredBy || []).includes(user.uid);
+            const isLive = m.kind === "live-location" && m.live?.isActive && msLeft(m) > 0;
 
             return (
               <div key={m.id} className={`max-w-max ${mine ? "ml-auto" : ""} relative group`}>
                 <div className={`px-6 py-4 rounded ${mine ? "bg-blue-100" : "bg-gray-100"}`}>
                   {/* Reply preview */}
-                  <ReplyPreviewInBubble m={m} />
+                  {m.replyPreview && (
+                    <div className="mb-1 text-[11px] px-2 py-1 rounded bg-white/60 border">
+                      Replying to {m.replyPreview.senderId === user?.uid ? "you" : "them"}: “
+                      {m.replyPreview.text}”
+                    </div>
+                  )}
 
-                  {/* Attachment preview */}
-                  {m.attachment ? (
+                  {/* 🧭 Location rendering */}
+                  {m.kind === "location" && m.location ? (
+                    <div className="space-y-1">
+                      <iframe
+                        className="rounded w-full max-w-md h-44"
+                        src={mapEmbed(m.location)}
+                        loading="lazy"
+                      />
+                      <a className="text-blue-600 underline text-sm" target="_blank" rel="noreferrer" href={mapsLink(m.location)}>
+                        Open in Maps
+                      </a>
+                      {m.text && <div className="whitespace-pre-wrap">{m.text}</div>}
+                    </div>
+                  ) : m.kind === "live-location" && m.location ? (
+                    <div className="space-y-1">
+                      <div className={`text-xs ${isLive ? "text-green-700" : "text-gray-500"}`}>
+                        {isLive ? liveBadge(m) : "Live location ended"}
+                        {mine && isLive && (
+                          <button
+                            className="ml-2 underline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              stopLiveSharing("user-stop");
+                            }}
+                          >
+                            Stop sharing
+                          </button>
+                        )}
+                      </div>
+                      <iframe
+                        className="rounded border w-full max-w-md h-44"
+                        src={mapEmbed(m.location)}
+                        loading="lazy"
+                        key={`${m.location.lat.toFixed(5)}-${m.location.lng.toFixed(5)}`}
+                      />
+                      <a className="text-blue-600 underline text-sm" target="_blank" rel="noreferrer" href={mapsLink(m.location)}>
+                        Open in Maps
+                      </a>
+                      {m.text && <div className="whitespace-pre-wrap">{m.text}</div>}
+                    </div>
+                  ) : /* Attachments / text (existing) */ m.attachment ? (
                     <div className="space-y-1">
                       {isImage(m.attachment.contentType) && (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={m.attachment.url}
-                          alt={m.attachment.name}
-                          className="max-h-64 rounded"
-                          loading="lazy"
-                        />
+                        <img src={m.attachment.url} alt={m.attachment.name} className="max-h-64 rounded" loading="lazy" />
                       )}
-
                       {isVideo(m.attachment.contentType) && (
                         <video src={m.attachment.url} controls className="max-h-64 rounded" />
                       )}
-
                       {!isImage(m.attachment.contentType) && !isVideo(m.attachment.contentType) && (
                         <a
                           href={m.attachment.url}
@@ -507,13 +725,10 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
                           rel="noreferrer"
                           className="inline-flex items-center gap-2 underline text-blue-600"
                         >
-                          <img src="fileicon.svg"></img> {m.attachment.name}
+                          📎 {m.attachment.name}
                         </a>
                       )}
-
-                      {!isEditing && m.text && (
-                        <div className="whitespace-pre-wrap">{m.text}</div>
-                      )}
+                      {!isEditing && m.text && <div className="whitespace-pre-wrap">{m.text}</div>}
                     </div>
                   ) : !isEditing ? (
                     <>
@@ -573,13 +788,10 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         <div ref={bottomRef} />
       </div>
 
-      {/* Floating actions menu (single instance) */}
+      {/* Floating actions menu */}
       {menuOpen && selectedMsg && menuAnchor && (
         <FloatingMenu anchor={menuAnchor} onClose={closeMenu}>
-          <button
-            onClick={() => toggleStar(selectedMsg)}
-            className="block w-full text-left hover:bg-gray-100 px-3 py-2"
-          >
+          <button onClick={() => toggleStar(selectedMsg)} className="block w-full text-left hover:bg-gray-100 px-3 py-2">
             {(selectedMsg.starredBy || []).includes(user!.uid) ? "Unstar" : "Star"}
           </button>
 
@@ -593,21 +805,27 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
             Reply
           </button>
 
-          {selectedMsg.senderId === user?.uid &&
-            canEdit(selectedMsg) &&
-            editingId !== selectedMsg.id && (
+          {selectedMsg.senderId === user?.uid && selectedMsg.kind !== "live-location" && editingId !== selectedMsg.id && (
+            <button onClick={() => startEdit(selectedMsg)} className="block w-full text-left hover:bg-gray-100 px-3 py-2">
+              Edit
+            </button>
+          )}
+
+          {/* Stop live from menu if it's your live message */}
+          {selectedMsg.kind === "live-location" &&
+            selectedMsg.senderId === user?.uid &&
+            selectedMsg.live?.isActive && (
               <button
-                onClick={() => startEdit(selectedMsg)}
+                onClick={() => {
+                  stopLiveSharing("menu-stop");
+                }}
                 className="block w-full text-left hover:bg-gray-100 px-3 py-2"
               >
-                Edit
+                Stop live location
               </button>
             )}
 
-          <button
-            onClick={() => deleteForMe(selectedMsg)}
-            className="block w-full text-left hover:bg-gray-100 px-3 py-2"
-          >
+          <button onClick={() => deleteForMe(selectedMsg)} className="block w-full text-left hover:bg-gray-100 px-3 py-2">
             Delete for me
           </button>
 
@@ -622,7 +840,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         </FloatingMenu>
       )}
 
-      {/* Reply banner in composer */}
+      {/* Reply banner */}
       {replyTo && (
         <div className="px-3 py-2 border-t bg-yellow-50 text-[12px] flex items-center justify-between gap-3">
           <div className="truncate">
@@ -650,7 +868,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
           className="border px-3 py-2 rounded cursor-pointer"
           title="Attach a file"
         >
-          <img src="./attachment-svgrepo-com.svg" className="w-7" />
+          <img src="./attachment-svgrepo-com.svg" className="w-6" />
         </button>
         <input
           ref={fileInputRef}
@@ -660,14 +878,58 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
           onChange={handleAttachChange}
         />
 
+        {/* 🧭 Location button + menu */}
+        <div className="relative">
+          <button
+            ref={locBtnRef}
+            type="button"
+            className="border px-3 py-2 rounded cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              setLocMenuOpen((v) => !v);
+            }}
+            title="Share location"
+          >
+            📍 Location
+          </button>
+          {locMenuOpen && (
+            <div
+              className="absolute left-0 bottom-[50px] mt-2 bg-white border rounded shadow z-20 w-44"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                className="block w-full text-left px-3 py-2 hover:bg-gray-100 cursor-pointer" 
+                onClick={sendCurrentLocation}
+              >
+                Send current location
+              </button>
+              <div className="px-3 pt-2 pb-1 text-[14px] text-white bg-black">Share live location for</div>
+              <button
+                className="block w-full text-left px-3 py-2 hover:bg-gray-100 cursor-pointer"
+                onClick={() => startLiveLocation(10)}
+              >
+                10 minutes
+              </button>
+              <button
+                className="block w-full text-left px-3 py-2 hover:bg-gray-100 cursor-pointer"
+                onClick={() => startLiveLocation(20)}
+              >
+                20 minutes
+              </button>
+              <button
+                className="block w-full text-left px-3 py-2 hover:bg-gray-100 cursor-pointer"
+                onClick={() => startLiveLocation(30)}
+              >
+                30 minutes
+              </button>
+            </div>
+          )}
+        </div>
+
         <textarea
           className="flex-1 border p-2 rounded resize-none"
-          rows={2}
-          placeholder={
-            replyTo
-              ? "Write a reply… (Enter to send, Shift+Enter for new line)"
-              : "Type a message… (Enter to send, Shift+Enter for new line)"
-          }
+          rows={1}
+          placeholder="Type a message… (Enter to send, Shift+Enter for new line)"
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
