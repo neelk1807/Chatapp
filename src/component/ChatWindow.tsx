@@ -26,6 +26,12 @@ import { db } from "../app/lib/firebase";
 import { useAuth } from "./AuthProvider";
 import VideoCallOverlay from "@/component/VideoCallOverlay";
 
+/* 🔹 Emoji picker (Google style) */
+import dynamic from "next/dynamic";
+import type { EmojiClickData } from "emoji-picker-react";
+import { EmojiStyle, Theme } from "emoji-picker-react";
+const EmojiPicker = dynamic(() => import("emoji-picker-react"), { ssr: false });
+
 /* ----------------------------- Types ----------------------------- */
 type Attachment = {
   url: string;
@@ -50,8 +56,8 @@ type Msg = {
   senderId: string;
   createdAt?: any;
   editedAt?: any;
-  readBy?: string[];          // ✅ used for blue double tick
-  deliveredTo?: string[];     // ✅ used for gray double tick
+  readBy?: string[]; // ✅ used for blue double tick
+  deliveredTo?: string[]; // ✅ used for gray double tick
   replyToId?: string | null;
   replyPreview?: { text: string; senderId: string } | null;
   starredBy?: string[];
@@ -200,11 +206,17 @@ function PeerPanel({
             <div className="text-xl font-semibold">
               {peer?.displayName || "Unknown"}
             </div>
-            <div className={`text-xs ${peer?.online ? "text-green-700" : "text-gray-500"}`}>
+            <div
+              className={`text-xs ${
+                peer?.online ? "text-green-700" : "text-gray-500"
+              }`}
+            >
               {lastSeenText}
             </div>
             {peer?.uid && (
-              <div className="text-[11px] text-gray-400 mt-1">UID: {peer.uid}</div>
+              <div className="text-[11px] text-gray-400 mt-1">
+                UID: {peer.uid}
+              </div>
             )}
           </div>
         </div>
@@ -295,11 +307,21 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
   // Refs to scroll to pinned
   const msgRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
+  // 🔹 Emoji picker state (composer)
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const emojiBtnRef = useRef<HTMLButtonElement>(null);
+  const [emojiAnchor, setEmojiAnchor] = useState<DOMRect | null>(null);
+
+  // 🔹 Emoji picker state (edit bubble)
+  const [editEmojiForId, setEditEmojiForId] = useState<string | null>(null);
+  const [editEmojiAnchor, setEditEmojiAnchor] = useState<DOMRect | null>(null);
+
   const isImage = (ct?: string) => !!ct && ct.startsWith("image/");
   const isVideo = (ct?: string) => !!ct && ct.startsWith("video/");
   const mapEmbed = (p: GeoPointLite, z = 15) =>
     `https://maps.google.com/maps?q=${p.lat},${p.lng}&z=${z}&output=embed`;
-  const mapsLink = (p: GeoPointLite) => `https://maps.google.com/?q=${p.lat},${p.lng}`;
+  const mapsLink = (p: GeoPointLite) =>
+    `https://maps.google.com/?q=${p.lat},${p.lng}`;
   const nowMs = () => Date.now();
 
   /* -------------------- Call watcher ------------------- */
@@ -360,15 +382,21 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
 
       // I blocked them?
       unsubIBlocked?.();
-      unsubIBlocked = onSnapshot(doc(db, "users", user.uid, "blocks", other), (s) => {
-        setIBlockedThem(s.exists());
-      });
+      unsubIBlocked = onSnapshot(
+        doc(db, "users", user.uid, "blocks", other),
+        (s) => {
+          setIBlockedThem(s.exists());
+        }
+      );
 
       // They blocked me?
       unsubAmBlocked?.();
-      unsubAmBlocked = onSnapshot(doc(db, "users", other, "blocks", user.uid), (s) => {
-        setAmBlocked(s.exists());
-      });
+      unsubAmBlocked = onSnapshot(
+        doc(db, "users", other, "blocks", user.uid),
+        (s) => {
+          setAmBlocked(s.exists());
+        }
+      );
     });
 
     return () => {
@@ -382,13 +410,22 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
   /* ------------------------ Messages listener ---------------------- */
   useEffect(() => {
     if (!convoId) return;
-    const q = query(collection(db, "conversations", convoId, "messages"), orderBy("createdAt"));
+    const q = query(
+      collection(db, "conversations", convoId, "messages"),
+      orderBy("createdAt")
+    );
     const unsub = onSnapshot(
       q,
       (snap) => {
-        const rows = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Msg[];
+        const rows = snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as any),
+        })) as Msg[];
         setMsgs(rows);
-        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 0);
+        setTimeout(
+          () => bottomRef.current?.scrollIntoView({ behavior: "smooth" }),
+          0
+        );
       },
       (err) => console.error("messages listener error:", err)
     );
@@ -397,18 +434,26 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
 
   // Close menu on outside click
   useEffect(() => {
-    const handler = () => setMenuOpen(null);
+    const handler = () => {
+      setMenuOpen(null);
+      setEmojiOpen(false);
+      setEditEmojiForId(null);
+    };
     window.addEventListener("click", handler);
     return () => window.removeEventListener("click", handler);
   }, []);
 
   // Cleanup live sharing on unmount / convo switch
   useEffect(() => {
-    return () => { void stopLiveSharing("component-unmount"); };
+    return () => {
+      void stopLiveSharing("component-unmount");
+    };
   }, [convoId]);
 
   /* ------------------- Attach (upload to Blob) --------------------- */
-  const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+  const handleAttachChange: React.ChangeEventHandler<HTMLInputElement> = (
+    e
+  ) => {
     const input = e.currentTarget;
     const file = input.files?.[0] ?? null;
     input.value = "";
@@ -419,7 +464,9 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
   const blockedBanner = iBlockedThem
     ? `You blocked ${peer?.displayName || "this user"}. Unblock to chat.`
     : amBlocked
-    ? `${peer?.displayName || "This user"} has blocked you. You can’t send messages.`
+    ? `${
+        peer?.displayName || "This user"
+      } has blocked you. You can’t send messages.`
     : "";
 
   const guardBlocked = (): boolean => {
@@ -462,7 +509,10 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         deliveredTo: [user.uid], // sender always "has" it
         replyToId: replyTo?.id ?? null,
         replyPreview: replyTo
-          ? { text: replyTo.text?.slice(0, 140) ?? "", senderId: replyTo.senderId }
+          ? {
+              text: replyTo.text?.slice(0, 140) ?? "",
+              senderId: replyTo.senderId,
+            }
           : null,
         starredBy: [],
         deletedFor: [],
@@ -482,7 +532,11 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
 
       await updateDoc(doc(db, "conversations", convoId), {
         updatedAt: serverTimestamp(),
-        lastMessage: { text: uploaded.name, by: user.uid, at: serverTimestamp() },
+        lastMessage: {
+          text: uploaded.name,
+          by: user.uid,
+          at: serverTimestamp(),
+        },
       });
     } catch (e: any) {
       alert("Failed to send attachment: " + (e?.message || e));
@@ -507,7 +561,10 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         readBy: [user.uid],
         replyToId: replyTo?.id ?? null,
         replyPreview: replyTo
-          ? { text: replyTo.text?.slice(0, 140) ?? "", senderId: replyTo.senderId }
+          ? {
+              text: replyTo.text?.slice(0, 140) ?? "",
+              senderId: replyTo.senderId,
+            }
           : null,
         starredBy: [],
         deletedFor: [],
@@ -533,11 +590,20 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     setEditText(m.text);
     closeMenu();
   };
-  const cancelEdit = () => { setEditingId(null); setEditText(""); };
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditText("");
+  };
   const saveEdit = async (m: Msg) => {
     if (!user) return;
-    const canEdit = m.senderId === user.uid && m.createdAt?.toMillis && Date.now() - m.createdAt.toMillis() <= 10_000;
-    if (!canEdit) { alert("You can edit only your own message within 10 seconds."); return; }
+    const canEdit =
+      m.senderId === user.uid &&
+      m.createdAt?.toMillis &&
+      Date.now() - m.createdAt.toMillis() <= 30_000;
+    if (!canEdit) {
+      alert("You can edit only your own message within 30 seconds.");
+      return;
+    }
     try {
       await updateDoc(doc(db, "conversations", convoId, "messages", m.id), {
         text: editText.trim(),
@@ -554,10 +620,14 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     const ref = doc(db, "conversations", convoId, "messages", m.id);
     const isStarredByMe = (m.starredBy || []).includes(user.uid);
     try {
-      await updateDoc(ref, { starredBy: isStarredByMe ? arrayRemove(user.uid) : arrayUnion(user.uid) });
+      await updateDoc(ref, {
+        starredBy: isStarredByMe ? arrayRemove(user.uid) : arrayUnion(user.uid),
+      });
     } catch (e: any) {
       alert("Failed to toggle star: " + (e.code || e.message || e));
-    } finally { closeMenu(); }
+    } finally {
+      closeMenu();
+    }
   };
 
   /* ---------------------- Pin / Unpin ------------------- */
@@ -566,9 +636,15 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     const ref = doc(db, "conversations", convoId, "messages", m.id);
     try {
       if (m.pinnedAt) {
-        await updateDoc(ref, { pinnedAt: deleteField(), pinnedBy: deleteField() } as any);
+        await updateDoc(ref, {
+          pinnedAt: deleteField(),
+          pinnedBy: deleteField(),
+        } as any);
       } else {
-        await updateDoc(ref, { pinnedAt: serverTimestamp(), pinnedBy: user.uid });
+        await updateDoc(ref, {
+          pinnedAt: serverTimestamp(),
+          pinnedBy: user.uid,
+        });
       }
     } catch (e: any) {
       alert("Failed to toggle pin: " + (e?.message || e));
@@ -588,36 +664,55 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
       });
     } catch (e: any) {
       alert("Failed to delete for me: " + (e.code || e.message || e));
-    } finally { closeMenu(); }
+    } finally {
+      closeMenu();
+    }
   };
 
   const deleteForEveryone = async (m: Msg) => {
     if (!user) return;
-    if (m.senderId !== user.uid) { alert("Only the sender can delete for everyone."); return; }
+    if (m.senderId !== user.uid) {
+      alert("Only the sender can delete for everyone.");
+      return;
+    }
     if (!confirm("Delete this message for everyone?")) return;
     try {
       await deleteDoc(doc(db, "conversations", convoId, "messages", m.id));
       if (m.attachment?.pathname) {
         await fetch("/api/blob-delete", {
-          method: "POST", headers: { "Content-Type": "application/json" },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ pathname: m.attachment.pathname }),
         });
       }
     } catch (e: any) {
       alert("Failed to delete for everyone: " + (e.code || e.message || e));
-    } finally { closeMenu(); }
+    } finally {
+      closeMenu();
+    }
   };
 
   /* ------------------------- Clear chat ---------------------------- */
   const clearChat = async () => {
-    if (!confirm("Clear all messages in this conversation? (Starred messages will be kept)")) return;
+    if (
+      !confirm(
+        "Clear all messages in this conversation? (Starred messages will be kept)"
+      )
+    )
+      return;
     setClearing(true);
     try {
       const messagesCol = collection(db, "conversations", convoId, "messages");
       let last: any = null;
       while (true) {
         let qy = query(messagesCol, orderBy("createdAt"), limit(400));
-        if (last) qy = query(messagesCol, orderBy("createdAt"), startAfter(last), limit(400));
+        if (last)
+          qy = query(
+            messagesCol,
+            orderBy("createdAt"),
+            startAfter(last),
+            limit(400)
+          );
         const snap = await getDocs(qy);
         if (snap.empty) break;
         const batch = writeBatch(db);
@@ -628,11 +723,15 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         await batch.commit();
         last = snap.docs[snap.docs.length - 1];
       }
-      await updateDoc(doc(db, "conversations", convoId), { updatedAt: serverTimestamp() });
+      await updateDoc(doc(db, "conversations", convoId), {
+        updatedAt: serverTimestamp(),
+      });
       alert("Chat cleared (starred messages kept).");
     } catch (e: any) {
       alert("Failed to clear chat: " + (e.code || e.message || e));
-    } finally { setClearing(false); }
+    } finally {
+      setClearing(false);
+    }
   };
 
   /* ---------------------------- Floating menu ---------------------- */
@@ -642,12 +741,18 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     setMenuOpen(m.id);
     setMenuAnchor((e.currentTarget as HTMLElement).getBoundingClientRect());
   };
-  const closeMenu = () => { setMenuOpen(null); setSelectedMsg(null); setMenuAnchor(null); };
+  const closeMenu = () => {
+    setMenuOpen(null);
+    setSelectedMsg(null);
+    setMenuAnchor(null);
+  };
 
   /* ======================= Location features ======================= */
   const ensureGeo = (): Geolocation => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
-      throw new Error("Location requires HTTPS (or http://localhost). Open the app via HTTPS.");
+      throw new Error(
+        "Location requires HTTPS (or http://localhost). Open the app via HTTPS."
+      );
     }
     return navigator.geolocation;
   };
@@ -657,11 +762,18 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
       try {
         const g = ensureGeo();
         g.getCurrentPosition(
-          (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+          (pos) =>
+            resolve({
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+            }),
           (err) => reject(err),
           { enableHighAccuracy: true, maximumAge: 10_000, timeout: 20_000 }
         );
-      } catch (e) { reject(e); }
+      } catch (e) {
+        reject(e);
+      }
     });
 
   const sendCurrentLocation = async () => {
@@ -676,7 +788,12 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         senderId: user.uid,
         createdAt: serverTimestamp(),
         replyToId: replyTo?.id ?? null,
-        replyPreview: replyTo ? { text: replyTo.text?.slice(0, 140) ?? "", senderId: replyTo.senderId } : null,
+        replyPreview: replyTo
+          ? {
+              text: replyTo.text?.slice(0, 140) ?? "",
+              senderId: replyTo.senderId,
+            }
+          : null,
         location: p,
         live: null,
         starredBy: [],
@@ -685,10 +802,13 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         pinnedAt: null,
         pinnedBy: null,
       });
-      setText(""); setReplyTo(null);
+      setText("");
+      setReplyTo(null);
     } catch (e: any) {
       alert(e?.message || "Failed to get location.");
-    } finally { setLocMenuOpen(false); }
+    } finally {
+      setLocMenuOpen(false);
+    }
   };
 
   const startLiveLocation = async (minutes: 10 | 20 | 30) => {
@@ -697,23 +817,39 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
 
     try {
       const p = await getOnce();
-      const ref = await addDoc(collection(db, "conversations", convoId, "messages"), {
-        kind: "live-location",
-        text: text.trim() || "",
-        senderId: user.uid,
-        createdAt: serverTimestamp(),
-        replyToId: replyTo?.id ?? null,
-        replyPreview: replyTo ? { text: replyTo.text?.slice(0, 140) ?? "", senderId: replyTo.senderId } : null,
-        location: p,
-        live: { isActive: true, minutes, startedAt: serverTimestamp(), expiresAt: serverTimestamp(), endedAt: null } as LiveMeta,
-        starredBy: [],
-        deletedFor: [],
-        attachment: null,
-        pinnedAt: null,
-        pinnedBy: null,
-      });
+      const ref = await addDoc(
+        collection(db, "conversations", convoId, "messages"),
+        {
+          kind: "live-location",
+          text: text.trim() || "",
+          senderId: user.uid,
+          createdAt: serverTimestamp(),
+          replyToId: replyTo?.id ?? null,
+          replyPreview: replyTo
+            ? {
+                text: replyTo.text?.slice(0, 140) ?? "",
+                senderId: replyTo.senderId,
+              }
+            : null,
+          location: p,
+          live: {
+            isActive: true,
+            minutes,
+            startedAt: serverTimestamp(),
+            expiresAt: serverTimestamp(),
+            endedAt: null,
+          } as LiveMeta,
+          starredBy: [],
+          deletedFor: [],
+          attachment: null,
+          pinnedAt: null,
+          pinnedBy: null,
+        }
+      );
 
-      setText(""); setReplyTo(null); setLocMenuOpen(false);
+      setText("");
+      setReplyTo(null);
+      setLocMenuOpen(false);
 
       liveMsgIdRef.current = ref.id;
       const g = ensureGeo();
@@ -725,17 +861,33 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         async (pos) => {
           if (!liveMsgIdRef.current) return;
           try {
-            await updateDoc(doc(db, "conversations", convoId, "messages", liveMsgIdRef.current), {
-              location: { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy },
-              updatedAt: serverTimestamp(),
-            });
+            await updateDoc(
+              doc(
+                db,
+                "conversations",
+                convoId,
+                "messages",
+                liveMsgIdRef.current
+              ),
+              {
+                location: {
+                  lat: pos.coords.latitude,
+                  lng: pos.coords.longitude,
+                  accuracy: pos.coords.accuracy,
+                },
+                updatedAt: serverTimestamp(),
+              }
+            );
           } catch {}
         },
         () => {},
         { enableHighAccuracy: true, maximumAge: 5_000, timeout: 20_000 }
       );
 
-      liveTimerRef.current = setTimeout(() => stopLiveSharing("auto-expire"), endAtMs - nowMs());
+      liveTimerRef.current = setTimeout(
+        () => stopLiveSharing("auto-expire"),
+        endAtMs - nowMs()
+      );
     } catch (e: any) {
       alert(e?.message || "Failed to start live location.");
     }
@@ -744,7 +896,9 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
   const stopLiveSharing = async (_why: string) => {
     try {
       if (liveWatchIdRef.current != null) {
-        try { navigator.geolocation?.clearWatch(liveWatchIdRef.current); } catch {}
+        try {
+          navigator.geolocation?.clearWatch(liveWatchIdRef.current);
+        } catch {}
       }
       if (liveTimerRef.current) clearTimeout(liveTimerRef.current);
       liveWatchIdRef.current = null;
@@ -752,12 +906,18 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
 
       if (liveMsgIdRef.current) {
         try {
-          await updateDoc(doc(db, "conversations", convoId, "messages", liveMsgIdRef.current), {
-            "live.isActive": false, "live.endedAt": serverTimestamp(),
-          } as any);
+          await updateDoc(
+            doc(db, "conversations", convoId, "messages", liveMsgIdRef.current),
+            {
+              "live.isActive": false,
+              "live.endedAt": serverTimestamp(),
+            } as any
+          );
         } catch {}
       }
-    } finally { liveMsgIdRef.current = null; }
+    } finally {
+      liveMsgIdRef.current = null;
+    }
   };
 
   const msLeft = (m: Msg): number => {
@@ -793,7 +953,6 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     return `Last seen: ${d} day${d > 1 ? "s" : ""} ago`;
   }, [peerOnline, peerLastSeen]);
 
-
   /* ------------------------------ UI -------------------------------- */
   const myUid = user?.uid;
   const canType = !(iBlockedThem || amBlocked);
@@ -819,7 +978,9 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
       } else {
         await updateDoc(ref, { blocked: true }).catch(async () => {
           // create if missing
-          await (await import("firebase/firestore")).setDoc(ref, { blocked: true, at: serverTimestamp() });
+          await (
+            await import("firebase/firestore")
+          ).setDoc(ref, { blocked: true, at: serverTimestamp() });
         });
       }
     } catch (e: any) {
@@ -843,10 +1004,12 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
             className="w-8 h-8 rounded-full border object-cover"
           />
           <div>
-            <div className="font-semibold">
-              {peer?.displayName || "Chat"}
-            </div>
-            <div className={`text-[11px] ${peerOnline ? "text-green-700" : "text-gray-500"}`}>
+            <div className="font-semibold">{peer?.displayName || "Chat"}</div>
+            <div
+              className={`text-[11px] ${
+                peerOnline ? "text-green-700" : "text-gray-500"
+              }`}
+            >
               {presenceText}
             </div>
           </div>
@@ -896,7 +1059,10 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
                 className="px-2 py-1 rounded bg-white border hover:bg-gray-50 whitespace-nowrap"
                 onClick={(e) => {
                   e.stopPropagation();
-                  msgRefs.current[pm.id]?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  msgRefs.current[pm.id]?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "center",
+                  });
                 }}
                 title={pm.text || pm.attachment?.name || "Pinned message"}
               >
@@ -916,38 +1082,69 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
           .map((m) => {
             const mine = m.senderId === user?.uid;
             const isEditing = editingId === m.id;
-            const isStarredByMe = !!user && (m.starredBy || []).includes(user.uid);
-            const isLive = m.kind === "live-location" && m.live?.isActive && msLeft(m) > 0;
+            const isStarredByMe =
+              !!user && (m.starredBy || []).includes(user.uid);
+            const isLive =
+              m.kind === "live-location" && m.live?.isActive && msLeft(m) > 0;
 
             return (
               <div
                 key={m.id}
-                ref={(el) => { msgRefs.current[m.id] = el; }}
+                ref={(el) => {
+                  msgRefs.current[m.id] = el;
+                }}
                 className={`max-w-max ${mine ? "ml-auto" : ""} relative group`}
               >
-                <div className={`px-6 py-4 rounded ${mine ? "bg-blue-100" : "bg-gray-100"}`}>
+                <div
+                  className={`px-6 py-4 rounded ${
+                    mine ? "bg-blue-100" : "bg-gray-100"
+                  }`}
+                >
                   {/* reply preview */}
                   {m.replyPreview && (
                     <div className="mb-1 text-[11px] px-2 py-1 rounded bg-white/60 border">
-                      Replying to {m.replyPreview.senderId === user?.uid ? "you" : "them"}: “{m.replyPreview.text}”
+                      Replying to{" "}
+                      {m.replyPreview.senderId === user?.uid ? "you" : "them"}:
+                      “{m.replyPreview.text}”
                     </div>
                   )}
 
                   {/* location */}
                   {m.kind === "location" && m.location ? (
                     <div className="space-y-1">
-                      <iframe className="rounded w-full max-w-md h-44" src={mapEmbed(m.location)} loading="lazy" />
-                      <a className="text-blue-600 underline text-sm" target="_blank" rel="noreferrer" href={mapsLink(m.location)}>
+                      <iframe
+                        className="rounded w-full max-w-md h-44"
+                        src={mapEmbed(m.location)}
+                        loading="lazy"
+                      />
+                      <a
+                        className="text-blue-600 underline text-sm"
+                        target="_blank"
+                        rel="noreferrer"
+                        href={mapsLink(m.location)}
+                      >
                         Open in Maps
                       </a>
-                      {m.text && <div className="whitespace-pre-wrap">{m.text}</div>}
+                      {m.text && (
+                        <div className="whitespace-pre-wrap">{m.text}</div>
+                      )}
                     </div>
                   ) : m.kind === "live-location" && m.location ? (
                     <div className="space-y-1">
-                      <div className={`text-xs ${isLive ? "text-green-700" : "text-gray-500"}`}>
+                      <div
+                        className={`text-xs ${
+                          isLive ? "text-green-700" : "text-gray-500"
+                        }`}
+                      >
                         {isLive ? liveBadge(m) : "Live location ended"}
                         {mine && isLive && (
-                          <button className="ml-2 underline" onClick={(e) => { e.stopPropagation(); stopLiveSharing("user-stop"); }}>
+                          <button
+                            className="ml-2 underline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              stopLiveSharing("user-stop");
+                            }}
+                          >
                             Stop sharing
                           </button>
                         )}
@@ -956,28 +1153,54 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
                         className="rounded  w-full max-w-md h-44"
                         src={mapEmbed(m.location)}
                         loading="lazy"
-                        key={`${m.location.lat.toFixed(5)}-${m.location.lng.toFixed(5)}`}
+                        key={`${m.location.lat.toFixed(
+                          5
+                        )}-${m.location.lng.toFixed(5)}`}
                       />
-                      <a className="text-blue-600 underline text-sm" target="_blank" rel="noreferrer" href={mapsLink(m.location)}>
+                      <a
+                        className="text-blue-600 underline text-sm"
+                        target="_blank"
+                        rel="noreferrer"
+                        href={mapsLink(m.location)}
+                      >
                         Open in Maps
                       </a>
-                      {m.text && <div className="whitespace-pre-wrap">{m.text}</div>}
+                      {m.text && (
+                        <div className="whitespace-pre-wrap">{m.text}</div>
+                      )}
                     </div>
                   ) : m.attachment ? (
                     <div className="space-y-1">
                       {isImage(m.attachment.contentType) && (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={m.attachment.url} alt={m.attachment.name} className="max-h-64 rounded" loading="lazy" />
+                        <img
+                          src={m.attachment.url}
+                          alt={m.attachment.name}
+                          className="max-h-64 rounded"
+                          loading="lazy"
+                        />
                       )}
                       {isVideo(m.attachment.contentType) && (
-                        <video src={m.attachment.url} controls className="max-h-64 rounded" />
+                        <video
+                          src={m.attachment.url}
+                          controls
+                          className="max-h-64 rounded"
+                        />
                       )}
-                      {!isImage(m.attachment.contentType) && !isVideo(m.attachment.contentType) && (
-                        <a href={m.attachment.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 underline text-blue-600">
-                          📎 {m.attachment.name}
-                        </a>
+                      {!isImage(m.attachment.contentType) &&
+                        !isVideo(m.attachment.contentType) && (
+                          <a
+                            href={m.attachment.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-2 underline text-blue-600"
+                          >
+                            📎 {m.attachment.name}
+                          </a>
+                        )}
+                      {!isEditing && m.text && (
+                        <div className="whitespace-pre-wrap">{m.text}</div>
                       )}
-                      {!isEditing && m.text && <div className="whitespace-pre-wrap">{m.text}</div>}
                     </div>
                   ) : !isEditing ? (
                     <>
@@ -986,7 +1209,9 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
                         {m.editedAt && <span>edited</span>}
                         {isStarredByMe && <span>★ starred</span>}
                         {/* pin indicator */}
-                        {m.pinnedAt && <span className="ml-2 text-amber-700">📌</span>}
+                        {m.pinnedAt && (
+                          <span className="ml-2 text-amber-700">📌</span>
+                        )}
                       </div>
                     </>
                   ) : null}
@@ -1001,11 +1226,39 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
                         className="w-full border rounded p-2"
                         onClick={(e) => e.stopPropagation()}
                       />
-                      <div className="flex gap-2">
-                        <button onClick={(e) => { e.stopPropagation(); saveEdit(m); }} className="px-2 py-1 border rounded bg-blue-600 text-white text-xs">
+                      <div className="flex items-center gap-2">
+                        {/* 🔹 Emoji button for editor */}
+                        <button
+                          className="px-2 py-1 border rounded text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditEmojiForId(m.id);
+                            setEditEmojiAnchor(
+                              (
+                                e.currentTarget as HTMLElement
+                              ).getBoundingClientRect()
+                            );
+                          }}
+                          title="Add emoji"
+                        >
+                          😊
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            saveEdit(m);
+                          }}
+                          className="px-2 py-1 border rounded bg-blue-600 text-white text-xs"
+                        >
                           Save
                         </button>
-                        <button onClick={(e) => { e.stopPropagation(); cancelEdit(); }} className="px-2 py-1 border rounded text-xs">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            cancelEdit();
+                          }}
+                          className="px-2 py-1 border rounded text-xs"
+                        >
                           Cancel
                         </button>
                       </div>
@@ -1031,16 +1284,27 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
       {menuOpen && selectedMsg && menuAnchor && (
         <FloatingMenu anchor={menuAnchor} onClose={closeMenu}>
           {/* Star / Unstar */}
-          <button onClick={() => toggleStar(selectedMsg)} className="block w-full text-left hover:bg-gray-100 px-3 py-2">
-            {(selectedMsg.starredBy || []).includes(user!.uid) ? "Unstar" : "Star"}
+          <button
+            onClick={() => toggleStar(selectedMsg)}
+            className="block w-full text-left hover:bg-gray-100 px-3 py-2"
+          >
+            {(selectedMsg.starredBy || []).includes(user!.uid)
+              ? "Unstar"
+              : "Star"}
           </button>
           {/* Pin / Unpin */}
-          <button onClick={() => togglePin(selectedMsg)} className="block w-full text-left hover:bg-gray-100 px-3 py-2">
+          <button
+            onClick={() => togglePin(selectedMsg)}
+            className="block w-full text-left hover:bg-gray-100 px-3 py-2"
+          >
             {selectedMsg.pinnedAt ? "Unpin" : "Pin"}
           </button>
 
           <button
-            onClick={() => { setReplyTo(selectedMsg); closeMenu(); }}
+            onClick={() => {
+              setReplyTo(selectedMsg);
+              closeMenu();
+            }}
             className="block w-full text-left hover:bg-gray-100 px-3 py-2"
           >
             Reply
@@ -1049,20 +1313,50 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
           {selectedMsg.senderId === user?.uid &&
             selectedMsg.kind !== "live-location" &&
             editingId !== selectedMsg.id && (
-              <button onClick={() => startEdit(selectedMsg)} className="block w-full text-left hover:bg-gray-100 px-3 py-2">
+              <button
+                onClick={() => startEdit(selectedMsg)}
+                className="block w-full text-left hover:bg-gray-100 px-3 py-2"
+              >
                 Edit
               </button>
             )}
 
-          <button onClick={() => deleteForMe(selectedMsg)} className="block w-full text-left hover:bg-gray-100 px-3 py-2">
+          <button
+            onClick={() => deleteForMe(selectedMsg)}
+            className="block w-full text-left hover:bg-gray-100 px-3 py-2"
+          >
             Delete for me
           </button>
 
           {selectedMsg.senderId === user?.uid && (
-            <button onClick={() => deleteForEveryone(selectedMsg)} className="block w-full text-left hover:bg-gray-100 px-3 py-2 text-red-600">
+            <button
+              onClick={() => deleteForEveryone(selectedMsg)}
+              className="block w-full text-left hover:bg-gray-100 px-3 py-2 text-red-600"
+            >
               Delete for everyone
             </button>
           )}
+        </FloatingMenu>
+      )}
+
+      {/* 🔹 Emoji picker for the editor bubble */}
+      {editEmojiForId && editEmojiAnchor && (
+        <FloatingMenu
+          anchor={editEmojiAnchor}
+          width={330}
+          onClose={() => setEditEmojiForId(null)}
+        >
+          <div className="p-1" onClick={(e) => e.stopPropagation()}>
+            <EmojiPicker
+              onEmojiClick={(data: EmojiClickData) => {
+                setEditText((t) => t + data.emoji);
+              }}
+              emojiStyle={EmojiStyle.GOOGLE}
+              theme={Theme.AUTO}
+              lazyLoadEmojis
+              height={360}
+            />
+          </div>
         </FloatingMenu>
       )}
 
@@ -1070,9 +1364,12 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
       {replyTo && (
         <div className="px-3 py-2 border-t bg-yellow-50 text-[12px] flex items-center justify-between gap-3">
           <div className="truncate">
-            Replying to: <span className="italic">“{replyTo.text?.slice(0, 140)}”</span>
+            Replying to:{" "}
+            <span className="italic">“{replyTo.text?.slice(0, 140)}”</span>
           </div>
-          <button className="underline" onClick={() => setReplyTo(null)}>Cancel</button>
+          <button className="underline" onClick={() => setReplyTo(null)}>
+            Cancel
+          </button>
         </div>
       )}
 
@@ -1092,14 +1389,23 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
       {/* Video Overlay */}
       {showVideo && (
         <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50">
-          <VideoCallOverlay convoId={convoId} onClose={() => setShowVideo(false)} />
+          <VideoCallOverlay
+            convoId={convoId}
+            onClose={() => setShowVideo(false)}
+          />
         </div>
       )}
 
       {/* Composer */}
       <div className="p-3 border-t flex gap-2 items-end">
-        <button type="button" onClick={pickFile} className="border px-3 py-2 rounded cursor-pointer disabled:opacity-50" title="Attach a file" disabled={!canType}>
-          <img src="./attachment-svgrepo-com.svg" className="w-6" />
+        <button
+          type="button"
+          onClick={pickFile}
+          className="border px-3 py-2 rounded cursor-pointer disabled:opacity-50"
+          title="Attach a file"
+          disabled={!canType}
+        >
+          <img src="./attachment-svgrepo-com.svg" className="w-12 md:w-7 sm:w-9" />
         </button>
         <input
           ref={fileInputRef}
@@ -1114,47 +1420,102 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
           <button
             type="button"
             className="border px-3 py-2 rounded cursor-pointer disabled:opacity-50"
-            onClick={(e) => { e.stopPropagation(); if (canType) setLocMenuOpen((v) => !v); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (canType) setLocMenuOpen((v) => !v);
+            }}
             title="Share location"
             disabled={!canType}
           >
-            📍 Location
+            📍 
           </button>
           {locMenuOpen && canType && (
             <div
               className="absolute left-0 bottom-[50px] mt-2 bg-white rounded shadow z-20 w-44"
               onClick={(e) => e.stopPropagation()}
             >
-              <button className="block w-full text-left px-3 py-2 hover:bg-gray-100 cursor-pointer" onClick={sendCurrentLocation}>
+              <button
+                className="block w-full text-left px-3 py-2 hover:bg-gray-100 cursor-pointer"
+                onClick={sendCurrentLocation}
+              >
                 Send current location
               </button>
-              <div className="px-3 pt-2 pb-1 text-[14px] text-white bg-black">Share live location for</div>
-              <button className="block w-full text-left px-3 py-2 hover:bg-gray-100 cursor-pointer" onClick={() => startLiveLocation(10)}>
+              <div className="px-3 pt-2 pb-1 text-[14px] text-white bg-black">
+                Share live location for
+              </div>
+              <button
+                className="block w-full text-left px-3 py-2 hover:bg-gray-100 cursor-pointer"
+                onClick={() => startLiveLocation(10)}
+              >
                 10 minutes
               </button>
-              <button className="block w-full text-left px-3 py-2 hover:bg-gray-100 cursor-pointer" onClick={() => startLiveLocation(20)}>
+              <button
+                className="block w-full text-left px-3 py-2 hover:bg-gray-100 cursor-pointer"
+                onClick={() => startLiveLocation(20)}
+              >
                 20 minutes
               </button>
-              <button className="block w-full text-left px-3 py-2 hover:bg-gray-100 cursor-pointer" onClick={() => startLiveLocation(30)}>
+              <button
+                className="block w-full text-left px-3 py-2 hover:bg-gray-100 cursor-pointer"
+                onClick={() => startLiveLocation(30)}
+              >
                 30 minutes
               </button>
             </div>
           )}
         </div>
 
-        <textarea
-          className="flex-1 border p-2 rounded resize-none disabled:opacity-50"
-          rows={1}
-          placeholder="Type a message…"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
+        <div className="message border w-full flex rounded">
+          <textarea
+            className="flex-1 w-full p-2  resize-none disabled:opacity-50"
+            rows={1}
+            placeholder="Type a message…"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (!canType) return;
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send();
+              }
+            }}
+            disabled={!canType}
+            onClick={closeMenu}
+          />
+           {/* 🔹 Emoji button for composer */}
+        <button
+          type="button"
+          ref={emojiBtnRef}
+          className=" px-3 py-2 rounded cursor-pointer disabled:opacity-50"
+          onClick={(e) => {
+            e.stopPropagation();
             if (!canType) return;
-            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+            setEmojiAnchor((e.currentTarget as HTMLElement).getBoundingClientRect());
+            setEmojiOpen((v) => !v);
           }}
+          title="Add emoji"
           disabled={!canType}
-          onClick={closeMenu}
-        />
+        >
+          😊
+        </button>
+
+        {/* Emoji picker popover (composer) */}
+        {emojiOpen && emojiAnchor && (
+          <FloatingMenu anchor={emojiAnchor} width={330} onClose={() => setEmojiOpen(false)}>
+            <div className="p-1" onClick={(e) => e.stopPropagation()}>
+              <EmojiPicker
+                onEmojiClick={(data: EmojiClickData) => {
+                  setText((t) => t + data.emoji);
+                }}
+                emojiStyle={EmojiStyle.GOOGLE}
+                theme={Theme.AUTO}
+                lazyLoadEmojis
+                height={360}
+              />
+            </div>
+          </FloatingMenu>
+        )}
+        </div>
         <button
           className="border px-4 py-2 rounded disabled:opacity-50 cursor-pointer"
           onClick={send}
