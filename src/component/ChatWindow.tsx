@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   collection,
   addDoc,
@@ -20,6 +20,7 @@ import {
   arrayRemove,
   deleteDoc,
   getDoc,
+  deleteField,
 } from "firebase/firestore";
 import { db } from "../app/lib/firebase";
 import { useAuth } from "./AuthProvider";
@@ -49,7 +50,8 @@ type Msg = {
   senderId: string;
   createdAt?: any;
   editedAt?: any;
-  readBy?: string[];
+  readBy?: string[];          // ✅ used for blue double tick
+  deliveredTo?: string[];     // ✅ used for gray double tick
   replyToId?: string | null;
   replyPreview?: { text: string; senderId: string } | null;
   starredBy?: string[];
@@ -59,6 +61,10 @@ type Msg = {
   kind?: "text" | "location" | "live-location";
   location?: GeoPointLite | null;
   live?: LiveMeta | null;
+
+  // ✅ Pinned
+  pinnedAt?: any | null;
+  pinnedBy?: string | null;
 };
 
 type UserLite = {
@@ -66,6 +72,10 @@ type UserLite = {
   displayName?: string;
   photoURL?: string;
   about?: string;
+
+  // ✅ Presence
+  online?: boolean;
+  lastSeen?: any;
 };
 
 type ConvoMeta = {
@@ -152,6 +162,19 @@ function PeerPanel({
   onToggleMute: () => void;
   onToggleBlock: () => void;
 }) {
+  const lastSeenText = useMemo(() => {
+    if (peer?.online) return "Online";
+    if (!peer?.lastSeen?.toMillis) return "Last seen: unknown";
+    const ms = Date.now() - peer.lastSeen.toMillis();
+    const m = Math.max(0, Math.floor(ms / 60000));
+    if (m < 1) return "Last seen: just now";
+    if (m < 60) return `Last seen: ${m} min ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `Last seen: ${h} hr ago`;
+    const d = Math.floor(h / 24);
+    return `Last seen: ${d} day${d > 1 ? "s" : ""} ago`;
+  }, [peer?.online, peer?.lastSeen]);
+
   return (
     <div className="absolute inset-0 bg-white/95 backdrop-blur border-l z-40">
       <div className="p-3 flex items-center justify-between border-b">
@@ -177,8 +200,11 @@ function PeerPanel({
             <div className="text-xl font-semibold">
               {peer?.displayName || "Unknown"}
             </div>
+            <div className={`text-xs ${peer?.online ? "text-green-700" : "text-gray-500"}`}>
+              {lastSeenText}
+            </div>
             {peer?.uid && (
-              <div className="text-xs text-gray-500">UID: {peer.uid}</div>
+              <div className="text-[11px] text-gray-400 mt-1">UID: {peer.uid}</div>
             )}
           </div>
         </div>
@@ -252,6 +278,8 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
   // Convo + peer
   const [convo, setConvo] = useState<ConvoMeta | null>(null);
   const [peer, setPeer] = useState<UserLite | null>(null);
+  const [peerOnline, setPeerOnline] = useState(false);
+  const [peerLastSeen, setPeerLastSeen] = useState<any>(null);
   const [showPeerPanel, setShowPeerPanel] = useState(false);
 
   // Block / mute
@@ -264,6 +292,9 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
   const liveMsgIdRef = useRef<string | null>(null);
   const liveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Refs to scroll to pinned
+  const msgRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
   const isImage = (ct?: string) => !!ct && ct.startsWith("image/");
   const isVideo = (ct?: string) => !!ct && ct.startsWith("video/");
   const mapEmbed = (p: GeoPointLite, z = 15) =>
@@ -271,7 +302,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
   const mapsLink = (p: GeoPointLite) => `https://maps.google.com/?q=${p.lat},${p.lng}`;
   const nowMs = () => Date.now();
 
-  /* -------------------- Call watcher (unchanged) ------------------- */
+  /* -------------------- Call watcher ------------------- */
   useEffect(() => {
     if (!convoId || !user) return;
     const callsCol = collection(db, "conversations", convoId, "calls");
@@ -297,25 +328,34 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
       const data = (snap.data() as ConvoMeta) || null;
       setConvo(data);
 
-      // muted
       const mutedBy = data?.mutedBy || [];
       setIsMuted(!!user && mutedBy.includes(user.uid));
 
-      // peer
       const other = (data?.members || []).find((m) => m !== user.uid) || null;
       if (!other) {
         setPeer(null);
+        setPeerOnline(false);
+        setPeerLastSeen(null);
         unsubPeer?.();
         unsubIBlocked?.();
         unsubAmBlocked?.();
         return;
       }
 
-      // Peer profile
+      // Peer profile + presence
       unsubPeer?.();
       unsubPeer = onSnapshot(doc(db, "users", other), (s) => {
         const u = s.data() || {};
-        setPeer({ uid: other, displayName: (u as any).displayName, photoURL: (u as any).photoURL, about: (u as any).about });
+        setPeer({
+          uid: other,
+          displayName: (u as any).displayName,
+          photoURL: (u as any).photoURL,
+          about: (u as any).about,
+          online: (u as any).online,
+          lastSeen: (u as any).lastSeen,
+        });
+        setPeerOnline(!!(u as any).online);
+        setPeerLastSeen((u as any).lastSeen);
       });
 
       // I blocked them?
@@ -419,6 +459,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         senderId: user.uid,
         createdAt: serverTimestamp(),
         readBy: [user.uid],
+        deliveredTo: [user.uid], // sender always "has" it
         replyToId: replyTo?.id ?? null,
         replyPreview: replyTo
           ? { text: replyTo.text?.slice(0, 140) ?? "", senderId: replyTo.senderId }
@@ -432,6 +473,8 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
           size: uploaded.size,
           contentType: uploaded.contentType,
         } as Attachment,
+        pinnedAt: null,
+        pinnedBy: null,
       });
 
       setText("");
@@ -469,6 +512,8 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         starredBy: [],
         deletedFor: [],
         attachment: null,
+        pinnedAt: null,
+        pinnedBy: null,
       });
       setText("");
       setReplyTo(null);
@@ -514,6 +559,25 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
       alert("Failed to toggle star: " + (e.code || e.message || e));
     } finally { closeMenu(); }
   };
+
+  /* ---------------------- Pin / Unpin ------------------- */
+  const togglePin = async (m: Msg) => {
+    if (!user) return;
+    const ref = doc(db, "conversations", convoId, "messages", m.id);
+    try {
+      if (m.pinnedAt) {
+        await updateDoc(ref, { pinnedAt: deleteField(), pinnedBy: deleteField() } as any);
+      } else {
+        await updateDoc(ref, { pinnedAt: serverTimestamp(), pinnedBy: user.uid });
+      }
+    } catch (e: any) {
+      alert("Failed to toggle pin: " + (e?.message || e));
+    } finally {
+      closeMenu();
+    }
+  };
+
+  const pinnedMsgs = useMemo(() => msgs.filter((m) => !!m.pinnedAt), [msgs]);
 
   /* ---------------------- Delete for me/everyone ------------------- */
   const deleteForMe = async (m: Msg) => {
@@ -611,7 +675,6 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         text: text.trim() || "",
         senderId: user.uid,
         createdAt: serverTimestamp(),
-        readBy: [user.uid],
         replyToId: replyTo?.id ?? null,
         replyPreview: replyTo ? { text: replyTo.text?.slice(0, 140) ?? "", senderId: replyTo.senderId } : null,
         location: p,
@@ -619,6 +682,8 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         starredBy: [],
         deletedFor: [],
         attachment: null,
+        pinnedAt: null,
+        pinnedBy: null,
       });
       setText(""); setReplyTo(null);
     } catch (e: any) {
@@ -637,7 +702,6 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         text: text.trim() || "",
         senderId: user.uid,
         createdAt: serverTimestamp(),
-        readBy: [user.uid],
         replyToId: replyTo?.id ?? null,
         replyPreview: replyTo ? { text: replyTo.text?.slice(0, 140) ?? "", senderId: replyTo.senderId } : null,
         location: p,
@@ -645,6 +709,8 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         starredBy: [],
         deletedFor: [],
         attachment: null,
+        pinnedAt: null,
+        pinnedBy: null,
       });
 
       setText(""); setReplyTo(null); setLocMenuOpen(false);
@@ -708,6 +774,26 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     return `Live location • ${mins}m ${secs}s left`;
   };
 
+  /* ------------------------------ Helpers ------------------------------- */
+  const otherUid = useMemo(
+    () => (convo?.members || []).find((m) => m !== user?.uid) || null,
+    [convo?.members, user?.uid]
+  );
+
+  const presenceText = useMemo(() => {
+    if (peerOnline) return "Online";
+    if (!peerLastSeen?.toMillis) return "Last seen: unknown";
+    const ms = Date.now() - peerLastSeen.toMillis();
+    const m = Math.max(0, Math.floor(ms / 60000));
+    if (m < 1) return "Last seen: just now";
+    if (m < 60) return `Last seen: ${m} min ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `Last seen: ${h} hr ago`;
+    const d = Math.floor(h / 24);
+    return `Last seen: ${d} day${d > 1 ? "s" : ""} ago`;
+  }, [peerOnline, peerLastSeen]);
+
+
   /* ------------------------------ UI -------------------------------- */
   const myUid = user?.uid;
   const canType = !(iBlockedThem || amBlocked);
@@ -743,7 +829,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
 
   return (
     <div className="flex flex-col h-full relative" onClick={closeMenu}>
-      {/* Header: show peer name */}
+      {/* Header with presence */}
       <div className="p-3 border-b flex items-center justify-between">
         <div className="flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -756,8 +842,13 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
             alt=""
             className="w-8 h-8 rounded-full border object-cover"
           />
-          <div className="font-semibold">
-            {peer?.displayName || "Chat"}
+          <div>
+            <div className="font-semibold">
+              {peer?.displayName || "Chat"}
+            </div>
+            <div className={`text-[11px] ${peerOnline ? "text-green-700" : "text-gray-500"}`}>
+              {presenceText}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -794,6 +885,30 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         </div>
       )}
 
+      {/* Pinned bar */}
+      {pinnedMsgs.length > 0 && (
+        <div className="px-3 py-2 border-b bg-amber-50 text-[12px] flex items-center gap-2 overflow-x-auto">
+          <span className="font-medium">Pinned:</span>
+          <div className="flex gap-2">
+            {pinnedMsgs.map((pm) => (
+              <button
+                key={pm.id}
+                className="px-2 py-1 rounded bg-white border hover:bg-gray-50 whitespace-nowrap"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  msgRefs.current[pm.id]?.scrollIntoView({ behavior: "smooth", block: "center" });
+                }}
+                title={pm.text || pm.attachment?.name || "Pinned message"}
+              >
+                {(pm.text && pm.text.slice(0, 40)) ||
+                  pm.attachment?.name ||
+                  "Pinned"}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {msgs
@@ -805,7 +920,11 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
             const isLive = m.kind === "live-location" && m.live?.isActive && msLeft(m) > 0;
 
             return (
-              <div key={m.id} className={`max-w-max ${mine ? "ml-auto" : ""} relative group`}>
+              <div
+                key={m.id}
+                ref={(el) => { msgRefs.current[m.id] = el; }}
+                className={`max-w-max ${mine ? "ml-auto" : ""} relative group`}
+              >
                 <div className={`px-6 py-4 rounded ${mine ? "bg-blue-100" : "bg-gray-100"}`}>
                   {/* reply preview */}
                   {m.replyPreview && (
@@ -866,6 +985,8 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
                       <div className="mt-1 flex items-center gap-2 text-[10px] text-gray-500">
                         {m.editedAt && <span>edited</span>}
                         {isStarredByMe && <span>★ starred</span>}
+                        {/* pin indicator */}
+                        {m.pinnedAt && <span className="ml-2 text-amber-700">📌</span>}
                       </div>
                     </>
                   ) : null}
@@ -909,8 +1030,13 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
       {/* floating menu */}
       {menuOpen && selectedMsg && menuAnchor && (
         <FloatingMenu anchor={menuAnchor} onClose={closeMenu}>
+          {/* Star / Unstar */}
           <button onClick={() => toggleStar(selectedMsg)} className="block w-full text-left hover:bg-gray-100 px-3 py-2">
             {(selectedMsg.starredBy || []).includes(user!.uid) ? "Unstar" : "Star"}
+          </button>
+          {/* Pin / Unpin */}
+          <button onClick={() => togglePin(selectedMsg)} className="block w-full text-left hover:bg-gray-100 px-3 py-2">
+            {selectedMsg.pinnedAt ? "Unpin" : "Pin"}
           </button>
 
           <button
