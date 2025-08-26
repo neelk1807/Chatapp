@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@vercel/blob": "^1.1.1",
+    "@vercel/speed-insights": "^1.2.0",
     "firebase": "^12.1.0",
     "leaflet": "^1.9.4",
     "next": "15.4.6",
