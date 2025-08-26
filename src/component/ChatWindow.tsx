@@ -1031,7 +1031,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
             Video
           </button>
           <button
-            className="text-xs underline disabled:opacity-50"
+            className="text-xs underline disabled:opacity-50 cursor-pointer" 
             onClick={clearChat}
             disabled={clearing}
             title="Delete all non-starred messages"
@@ -1056,7 +1056,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
             {pinnedMsgs.map((pm) => (
               <button
                 key={pm.id}
-                className="px-2 py-1 rounded bg-white border hover:bg-gray-50 whitespace-nowrap"
+                className="px-2 py-1 rounded bg-white border hover:bg-gray-50 whitespace-nowrap cursor-pointer"
                 onClick={(e) => {
                   e.stopPropagation();
                   msgRefs.current[pm.id]?.scrollIntoView({
@@ -1139,7 +1139,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
                         {isLive ? liveBadge(m) : "Live location ended"}
                         {mine && isLive && (
                           <button
-                            className="ml-2 underline"
+                            className="ml-2 underline cursor-pointer"
                             onClick={(e) => {
                               e.stopPropagation();
                               stopLiveSharing("user-stop");
@@ -1229,7 +1229,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
                       <div className="flex items-center gap-2">
                         {/* 🔹 Emoji button for editor */}
                         <button
-                          className="px-2 py-1 border rounded text-xs"
+                          className="px-2 py-1 border rounded text-xs cursor-pointer"
                           onClick={(e) => {
                             e.stopPropagation();
                             setEditEmojiForId(m.id);
@@ -1248,7 +1248,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
                             e.stopPropagation();
                             saveEdit(m);
                           }}
-                          className="px-2 py-1 border rounded bg-blue-600 text-white text-xs"
+                          className="px-2 py-1 border rounded bg-blue-600 text-white text-xs cursor-pointer"
                         >
                           Save
                         </button>
@@ -1257,7 +1257,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
                             e.stopPropagation();
                             cancelEdit();
                           }}
-                          className="px-2 py-1 border rounded text-xs"
+                          className="px-2 py-1 border rounded text-xs cursor-pointer"
                         >
                           Cancel
                         </button>
@@ -1286,7 +1286,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
           {/* Star / Unstar */}
           <button
             onClick={() => toggleStar(selectedMsg)}
-            className="block w-full text-left hover:bg-gray-100 px-3 py-2"
+            className="block w-full text-left hover:bg-gray-100 px-3 py-2 cursor-pointer"
           >
             {(selectedMsg.starredBy || []).includes(user!.uid)
               ? "Unstar"
@@ -1295,7 +1295,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
           {/* Pin / Unpin */}
           <button
             onClick={() => togglePin(selectedMsg)}
-            className="block w-full text-left hover:bg-gray-100 px-3 py-2"
+            className="block w-full text-left hover:bg-gray-100 px-3 py-2 cursor-pointer"
           >
             {selectedMsg.pinnedAt ? "Unpin" : "Pin"}
           </button>
@@ -1305,7 +1305,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
               setReplyTo(selectedMsg);
               closeMenu();
             }}
-            className="block w-full text-left hover:bg-gray-100 px-3 py-2"
+            className="block w-full text-left hover:bg-gray-100 px-3 py-2 cursor-pointer"
           >
             Reply
           </button>
@@ -1315,7 +1315,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
             editingId !== selectedMsg.id && (
               <button
                 onClick={() => startEdit(selectedMsg)}
-                className="block w-full text-left hover:bg-gray-100 px-3 py-2"
+                className="block w-full text-left hover:bg-gray-100 px-3 py-2 cursor-pointer"
               >
                 Edit
               </button>
@@ -1323,7 +1323,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
 
           <button
             onClick={() => deleteForMe(selectedMsg)}
-            className="block w-full text-left hover:bg-gray-100 px-3 py-2"
+            className="block w-full text-left hover:bg-gray-100 px-3 py-2 cursor-pointer"
           >
             Delete for me
           </button>
@@ -1331,7 +1331,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
           {selectedMsg.senderId === user?.uid && (
             <button
               onClick={() => deleteForEveryone(selectedMsg)}
-              className="block w-full text-left hover:bg-gray-100 px-3 py-2 text-red-600"
+              className="block w-full text-left hover:bg-gray-100 px-3 py-2 text-red-600 cursor-pointer"
             >
               Delete for everyone
             </button>
@@ -1367,7 +1367,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
             Replying to:{" "}
             <span className="italic">“{replyTo.text?.slice(0, 140)}”</span>
           </div>
-          <button className="underline" onClick={() => setReplyTo(null)}>
+          <button className="underline cursor-pointer" onClick={() => setReplyTo(null)}>
             Cancel
           </button>
         </div>
@@ -1486,7 +1486,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         <button
           type="button"
           ref={emojiBtnRef}
-          className=" px-3 py-2 rounded cursor-pointer disabled:opacity-50"
+          className=" px-3 py-2 rounded cursor-pointer disabled:opacity-50 cursor-pointer"
           onClick={(e) => {
             e.stopPropagation();
             if (!canType) return;
