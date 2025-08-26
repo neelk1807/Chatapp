@@ -1486,7 +1486,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         <button
           type="button"
           ref={emojiBtnRef}
-          className=" px-3 py-2 rounded cursor-pointer disabled:opacity-50 cursor-pointer"
+          className=" px-3 py-2 rounded cursor-pointer disabled:opacity-50 "
           onClick={(e) => {
             e.stopPropagation();
             if (!canType) return;
