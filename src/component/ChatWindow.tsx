@@ -26,7 +26,7 @@ import { db } from "../app/lib/firebase";
 import { useAuth } from "./AuthProvider";
 import VideoCallOverlay from "@/component/VideoCallOverlay";
 
-/* 🔹 Emoji picker (Google style) */
+/* Emoji picker (Google style) */
 import dynamic from "next/dynamic";
 import type { EmojiClickData } from "emoji-picker-react";
 import { EmojiStyle, Theme } from "emoji-picker-react";
@@ -56,8 +56,8 @@ type Msg = {
   senderId: string;
   createdAt?: any;
   editedAt?: any;
-  readBy?: string[]; // ✅ used for blue double tick
-  deliveredTo?: string[]; // ✅ used for gray double tick
+  readBy?: string[];
+  deliveredTo?: string[];
   replyToId?: string | null;
   replyPreview?: { text: string; senderId: string } | null;
   starredBy?: string[];
@@ -68,7 +68,7 @@ type Msg = {
   location?: GeoPointLite | null;
   live?: LiveMeta | null;
 
-  // ✅ Pinned
+  //  Pinned
   pinnedAt?: any | null;
   pinnedBy?: string | null;
 };
@@ -79,7 +79,7 @@ type UserLite = {
   photoURL?: string;
   about?: string;
 
-  // ✅ Presence
+  //  Presence
   online?: boolean;
   lastSeen?: any;
 };
@@ -150,7 +150,7 @@ function FloatingMenu({
   );
 }
 
-/* --------------------- Peer Profile side panel ------------------- */
+/* -------------- Peer Profile side panel ----------- */
 function PeerPanel({
   peer,
   isMuted,
@@ -185,8 +185,8 @@ function PeerPanel({
     <div className="absolute inset-0 bg-white/95 backdrop-blur border-l z-40">
       <div className="p-3 flex items-center justify-between border-b">
         <div className="font-semibold">Profile</div>
-        <button className="text-sm underline cursor-pointer" onClick={onClose}>
-          Close
+        <button className="text-sm   cursor-pointer" onClick={onClose}>
+          🗙
         </button>
       </div>
 
@@ -307,12 +307,12 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
   // Refs to scroll to pinned
   const msgRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // 🔹 Emoji picker state (composer)
+  // Emoji picker state (composer)
   const [emojiOpen, setEmojiOpen] = useState(false);
   const emojiBtnRef = useRef<HTMLButtonElement>(null);
   const [emojiAnchor, setEmojiAnchor] = useState<DOMRect | null>(null);
 
-  // 🔹 Emoji picker state (edit bubble)
+  // Emoji picker state (edit bubble)
   const [editEmojiForId, setEditEmojiForId] = useState<string | null>(null);
   const [editEmojiAnchor, setEditEmojiAnchor] = useState<DOMRect | null>(null);
 
@@ -443,7 +443,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
     return () => window.removeEventListener("click", handler);
   }, []);
 
-  // Cleanup live sharing on unmount / convo switch
+  // live sharing on unmount / convo switch
   useEffect(() => {
     return () => {
       void stopLiveSharing("component-unmount");
@@ -506,7 +506,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         senderId: user.uid,
         createdAt: serverTimestamp(),
         readBy: [user.uid],
-        deliveredTo: [user.uid], // sender always "has" it
+        deliveredTo: [user.uid],
         replyToId: replyTo?.id ?? null,
         replyPreview: replyTo
           ? {
@@ -1016,13 +1016,13 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
         </div>
         <div className="flex items-center gap-3">
           <button
-            className="text-sm underline cursor-pointer"
+            className="text-xl   cursor-pointer"
             onClick={(e) => {
               e.stopPropagation();
               setShowPeerPanel(true);
             }}
           >
-            View
+            👁
           </button>
           <button
             className="border px-3 py-1 rounded bg-green-900 text-white cursor-pointer"
@@ -1031,12 +1031,12 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
             Video
           </button>
           <button
-            className="text-xs underline disabled:opacity-50 cursor-pointer" 
+            className="text-xl disabled:opacity-50 cursor-pointer"
             onClick={clearChat}
             disabled={clearing}
             title="Delete all non-starred messages"
           >
-            {clearing ? "Clearing…" : "Clear chat"}
+            {clearing ? "Clearing…" : "🗑"}
           </button>
         </div>
       </div>
@@ -1367,7 +1367,10 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
             Replying to:{" "}
             <span className="italic">“{replyTo.text?.slice(0, 140)}”</span>
           </div>
-          <button className="underline cursor-pointer" onClick={() => setReplyTo(null)}>
+          <button
+            className="underline cursor-pointer"
+            onClick={() => setReplyTo(null)}
+          >
             Cancel
           </button>
         </div>
@@ -1405,7 +1408,10 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
           title="Attach a file"
           disabled={!canType}
         >
-          <img src="./attachment-svgrepo-com.svg" className="w-12 md:w-7 sm:w-9" />
+          <img
+            src="./attachment-svgrepo-com.svg"
+            className="w-12 md:w-7 sm:w-9"
+          />
         </button>
         <input
           ref={fileInputRef}
@@ -1427,7 +1433,7 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
             title="Share location"
             disabled={!canType}
           >
-            📍 
+            📍
           </button>
           {locMenuOpen && canType && (
             <div
@@ -1482,39 +1488,45 @@ export default function ChatWindow({ convoId }: { convoId: string }) {
             disabled={!canType}
             onClick={closeMenu}
           />
-           {/* 🔹 Emoji button for composer */}
-        <button
-          type="button"
-          ref={emojiBtnRef}
-          className=" px-3 py-2 rounded cursor-pointer disabled:opacity-50 "
-          onClick={(e) => {
-            e.stopPropagation();
-            if (!canType) return;
-            setEmojiAnchor((e.currentTarget as HTMLElement).getBoundingClientRect());
-            setEmojiOpen((v) => !v);
-          }}
-          title="Add emoji"
-          disabled={!canType}
-        >
-          😊
-        </button>
+          {/* 🔹 Emoji button for composer */}
+          <button
+            type="button"
+            ref={emojiBtnRef}
+            className=" px-3 py-2 rounded cursor-pointer disabled:opacity-50 "
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!canType) return;
+              setEmojiAnchor(
+                (e.currentTarget as HTMLElement).getBoundingClientRect()
+              );
+              setEmojiOpen((v) => !v);
+            }}
+            title="Add emoji"
+            disabled={!canType}
+          >
+            😊
+          </button>
 
-        {/* Emoji picker popover (composer) */}
-        {emojiOpen && emojiAnchor && (
-          <FloatingMenu anchor={emojiAnchor} width={330} onClose={() => setEmojiOpen(false)}>
-            <div className="p-1" onClick={(e) => e.stopPropagation()}>
-              <EmojiPicker
-                onEmojiClick={(data: EmojiClickData) => {
-                  setText((t) => t + data.emoji);
-                }}
-                emojiStyle={EmojiStyle.GOOGLE}
-                theme={Theme.AUTO}
-                lazyLoadEmojis
-                height={360}
-              />
-            </div>
-          </FloatingMenu>
-        )}
+          {/* Emoji picker popover (composer) */}
+          {emojiOpen && emojiAnchor && (
+            <FloatingMenu
+              anchor={emojiAnchor}
+              width={330}
+              onClose={() => setEmojiOpen(false)}
+            >
+              <div className="p-1" onClick={(e) => e.stopPropagation()}>
+                <EmojiPicker
+                  onEmojiClick={(data: EmojiClickData) => {
+                    setText((t) => t + data.emoji);
+                  }}
+                  emojiStyle={EmojiStyle.GOOGLE}
+                  theme={Theme.AUTO}
+                  lazyLoadEmojis
+                  height={360}
+                />
+              </div>
+            </FloatingMenu>
+          )}
         </div>
         <button
           className="border px-4 py-2 rounded disabled:opacity-50 cursor-pointer"

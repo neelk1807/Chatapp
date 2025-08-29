@@ -1,5 +1,11 @@
 "use client";
-import { ReactNode, useEffect, useState, createContext, useContext } from "react";
+import {
+  ReactNode,
+  useEffect,
+  useState,
+  createContext,
+  useContext,
+} from "react";
 import { auth } from "../app/lib/firebase";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { setupPresence } from "./Presence";
@@ -28,8 +34,6 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthCtx.Provider value={{ user, loading }}>
-      {children}
-    </AuthCtx.Provider>
+    <AuthCtx.Provider value={{ user, loading }}>{children}</AuthCtx.Provider>
   );
 }

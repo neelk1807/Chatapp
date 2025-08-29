@@ -7,8 +7,8 @@ import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [phone, setPhone] = useState("+91");      // e.g. +919900112233
-  const [code, setCode] = useState("");        // e.g. 123456 (your TEST code)
+  const [phone, setPhone] = useState("+91"); // e.g. +919900112233
+  const [code, setCode] = useState(""); // e.g. 123456 (your TEST code)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [confirmRes, setConfirmRes] = useState<any>(null);
   const [sending, setSending] = useState(false);
@@ -39,8 +39,10 @@ export default function LoginPage() {
       // IMPORTANT: phone must include +country code and must match your test entry
       const res = await signInWithPhoneNumber(auth, phone.trim(), appVerifier);
       setConfirmRes(res);
-      setMsg("OTP sent. Enter the code you configured in Firebase → Auth → Phone → Test numbers.");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setMsg(
+        "OTP sent. Enter the code you configured in Firebase → Auth → Phone → Test numbers."
+      );
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       setMsg(`Failed to send OTP: ${e?.message || e}`);
     } finally {
@@ -52,7 +54,8 @@ export default function LoginPage() {
     setMsg(null);
     setVerifying(true);
     try {
-      if (!confirmRes) throw new Error("No OTP session. Click 'Send OTP' first.");
+      if (!confirmRes)
+        throw new Error("No OTP session. Click 'Send OTP' first.");
       const cred = await confirmRes.confirm(code.trim()); // throws on wrong code
       const u = cred.user;
 
@@ -73,7 +76,7 @@ export default function LoginPage() {
 
       setMsg("Verified! Redirecting…");
       router.push("/"); // move off /login
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       // common codes: auth/invalid-verification-code, auth/code-expired
       setMsg(`Verification failed: ${e?.code || ""} ${e?.message || e}`);

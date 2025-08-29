@@ -6,12 +6,17 @@ export default function Avatar({
   name,
   size = 32,
   className = "",
-}: { src?: string | null; name?: string | null; size?: number; className?: string }) {
+}: {
+  src?: string | null;
+  name?: string | null;
+  size?: number;
+  className?: string;
+}) {
   const initials = (name || "?")
     .split(" ")
     .filter(Boolean)
     .slice(0, 2)
-    .map(s => s[0]?.toUpperCase())
+    .map((s) => s[0]?.toUpperCase())
     .join("");
 
   return src ? (
@@ -27,7 +32,11 @@ export default function Avatar({
   ) : (
     <div
       className={`rounded-full grid place-items-center bg-gray-200 text-gray-700 border ${className}`}
-      style={{ width: size, height: size, fontSize: Math.max(12, Math.floor(size * 0.4)) }}
+      style={{
+        width: size,
+        height: size,
+        fontSize: Math.max(12, Math.floor(size * 0.4)),
+      }}
       aria-label={name || "User"}
       title={name || "User"}
     >

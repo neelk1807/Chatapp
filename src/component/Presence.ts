@@ -1,5 +1,11 @@
 // component/presence.ts
-import { onDisconnect, onValue, ref, serverTimestamp as rtdbServerTime, set } from "firebase/database";
+import {
+  onDisconnect,
+  onValue,
+  ref,
+  serverTimestamp as rtdbServerTime,
+  set,
+} from "firebase/database";
 import { doc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { rtdb, db } from "@/app/lib/firebase";
 
@@ -27,7 +33,11 @@ export function setupPresence(uid: string) {
       const userRef = doc(db, "users", uid);
       await setDoc(
         userRef,
-        { online: true, lastSeen: serverTimestamp(), updatedAt: serverTimestamp() },
+        {
+          online: true,
+          lastSeen: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        },
         { merge: true }
       );
     } catch {}
@@ -42,7 +52,10 @@ export function setupPresence(uid: string) {
       if (v.state === "online") {
         await updateDoc(userRef, { online: true, lastSeen: serverTimestamp() });
       } else {
-        await updateDoc(userRef, { online: false, lastSeen: serverTimestamp() });
+        await updateDoc(userRef, {
+          online: false,
+          lastSeen: serverTimestamp(),
+        });
       }
     } catch {}
   });

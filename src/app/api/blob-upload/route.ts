@@ -4,7 +4,7 @@ import { put } from "@vercel/blob";
 export const runtime = "edge";
 export const maxDuration = 60;
 
-const SERVER_UPLOAD_LIMIT = 4.5 * 1024 * 1024; // server uploads limit
+const SERVER_UPLOAD_LIMIT = 4.5 * 1024 * 1024; 
 
 export async function POST(req: Request) {
   try {
@@ -35,7 +35,7 @@ export async function POST(req: Request) {
       access: "public",
       contentType: file.type || "application/octet-stream",
       addRandomSuffix: false,
-      token, // 👈 pass token explicitly
+      token,
     });
 
     return NextResponse.json({

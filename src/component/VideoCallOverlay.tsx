@@ -94,7 +94,7 @@ export default function VideoCallOverlay({
     try {
       const s = await navigator.mediaDevices.getUserMedia(constraints);
       return s;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       if (e?.name === "NotAllowedError")
         throw new Error("Permission blocked. Allow camera/mic in the browser.");
@@ -128,27 +128,32 @@ export default function VideoCallOverlay({
   };
 
   const wireRemote = () => {
-  const pc = pcRef.current!;
-  pc.ontrack = async (ev) => {
-    ev.streams[0].getTracks().forEach(track => {
-      remoteStreamRef.current?.addTrack(track);
-    });
+    const pc = pcRef.current!;
+    pc.ontrack = async (ev) => {
+      ev.streams[0].getTracks().forEach((track) => {
+        remoteStreamRef.current?.addTrack(track);
+      });
 
-    // attach once the stream has tracks
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.srcObject = remoteStreamRef.current!;
-      try { await remoteVideoRef.current.play(); } catch {}
-    }
-    if (remoteAudioRef.current) {
-      remoteAudioRef.current.srcObject = remoteStreamRef.current!;
-      try { await remoteAudioRef.current.play(); } catch {}
-    }
+      // attach once the stream has tracks
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = remoteStreamRef.current!;
+        try {
+          await remoteVideoRef.current.play();
+        } catch {}
+      }
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = remoteStreamRef.current!;
+        try {
+          await remoteAudioRef.current.play();
+        } catch {}
+      }
 
-    // set video flag properly
-    const hasVid = (remoteStreamRef.current?.getVideoTracks()?.length ?? 0) > 0;
-    setRemoteHasVideo(hasVid);
+      // set video flag properly
+      const hasVid =
+        (remoteStreamRef.current?.getVideoTracks()?.length ?? 0) > 0;
+      setRemoteHasVideo(hasVid);
+    };
   };
-};
 
   const cleanup = (_why: string) => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -180,7 +185,7 @@ export default function VideoCallOverlay({
     pcRef.current = null;
   };
 
-  // ---- toggles -------------------------------------------------------------
+  // ---- toggles -----------
 
   const toggleMic = () => {
     const tracks = localStreamRef.current?.getAudioTracks() || [];
@@ -196,15 +201,14 @@ export default function VideoCallOverlay({
     setCamOn(next);
   };
 
-  // ---- effects -------------------------------------------------------------
-
+  // ---- effects ------------
   // media preview on mount
   useEffect(() => {
     (async () => {
       try {
         await ensureLocalStream();
         setStep("preview");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
         setError(e?.message || String(e));
       }
@@ -299,20 +303,26 @@ export default function VideoCallOverlay({
         }
       });
 
-      const stopAnsWatch = onSnapshot(collection(callDocRef, "answerCandidates"), (snap) => {
-        snap.docChanges().forEach(async (c) => {
-          if (c.type === "added") {
-            try {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              await pc.addIceCandidate(new RTCIceCandidate(c.doc.data() as any));
-            } catch {}
-          }
-        });
-      });
+      const stopAnsWatch = onSnapshot(
+        collection(callDocRef, "answerCandidates"),
+        (snap) => {
+          snap.docChanges().forEach(async (c) => {
+            if (c.type === "added") {
+              try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                await pc.addIceCandidate(
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  new RTCIceCandidate(c.doc.data() as any)
+                );
+              } catch {}
+            }
+          });
+        }
+      );
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (pc as any)._unsubs = [stopCallWatch, stopAnsWatch];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       setError(e?.message || String(e));
       setStep("preview");
@@ -360,7 +370,10 @@ export default function VideoCallOverlay({
           if (c.type === "added") {
             try {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              await pc.addIceCandidate(new RTCIceCandidate(c.doc.data() as any));
+              await pc.addIceCandidate(
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                new RTCIceCandidate(c.doc.data() as any)
+              );
             } catch {}
           }
         });
@@ -381,7 +394,7 @@ export default function VideoCallOverlay({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (pc as any)._unsubs = [stopOfferWatch, stopCallWatch];
       setStep("in-call");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       setError(e?.message || String(e));
       setStep("preview");
@@ -417,7 +430,11 @@ export default function VideoCallOverlay({
 
   // ---- UI ------------------------------------------------------------------
 
-  const showControls = step === "preview" || step === "calling" || step === "incoming" || step === "in-call";
+  const showControls =
+    step === "preview" ||
+    step === "calling" ||
+    step === "incoming" ||
+    step === "in-call";
   const canToggleMic = hasMic && !!localStreamRef.current;
   const canToggleCam = hasCam && !!localStreamRef.current;
 
@@ -428,28 +445,43 @@ export default function VideoCallOverlay({
         <div className="font-semibold">Video Call</div>
         <div className="flex items-center gap-2">
           {step === "preview" && (
-            <button className="border px-3 py-1  bg-green-500 text-white rounded cursor-pointer" onClick={startCall}>
+            <button
+              className="border px-3 py-1  bg-green-500 text-white rounded cursor-pointer"
+              onClick={startCall}
+            >
               Start call
             </button>
           )}
           {step === "calling" && (
-            <button className="border px-3 py-1 rounded bg-red-500 text-white cursor-pointer" onClick={endCall}>
+            <button
+              className="border px-3 py-1 rounded bg-red-500 text-white cursor-pointer"
+              onClick={endCall}
+            >
               Cancel
             </button>
           )}
           {step === "incoming" && (
             <>
               <span className="text-sm">Incoming call…</span>
-              <button className="border px-3 py-1 rounded bg-green-500 text-white cursor-pointer" onClick={acceptCall}>
+              <button
+                className="border px-3 py-1 rounded bg-green-500 text-white cursor-pointer"
+                onClick={acceptCall}
+              >
                 Accept
               </button>
-              <button className="border px-3 py-1 rounded bg-red-500 text-white cursor-pointer" onClick={rejectCall}>
+              <button
+                className="border px-3 py-1 rounded bg-red-500 text-white cursor-pointer"
+                onClick={rejectCall}
+              >
                 Reject
               </button>
             </>
           )}
           {step === "in-call" && (
-            <button className="border px-3 py-1 rounded bg-red-500 text-white cursor-pointer" onClick={endCall}>
+            <button
+              className="border px-3 py-1 rounded bg-red-500 text-white cursor-pointer"
+              onClick={endCall}
+            >
               End
             </button>
           )}
@@ -461,13 +493,20 @@ export default function VideoCallOverlay({
 
       {/* Videos */}
       <div className="flex-1 grid place-items-center relative">
-        <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
+        <video
+          ref={remoteVideoRef}
+          autoPlay
+          playsInline
+          className="w-full h-full object-cover"
+        />
         <video
           ref={localVideoRef}
           autoPlay
           playsInline
           muted
-          className={`absolute bottom-4 right-4 w-48 h-36 rounded-lg border shadow bg-black/10 ${!camOn ? "opacity-40" : ""}`}
+          className={`absolute bottom-4 right-4 w-48 h-36 rounded-lg border shadow bg-black/10 ${
+            !camOn ? "opacity-40" : ""
+          }`}
         />
         {!camOn && (
           <div className="absolute bottom-4 right-4 w-48 h-36 rounded-lg border shadow grid place-items-center text-xs bg-black/30 text-white">
@@ -483,7 +522,9 @@ export default function VideoCallOverlay({
             <button
               onClick={toggleMic}
               disabled={!canToggleMic}
-              className={`px-3 py-1 rounded border cursor-pointer bg-blue-400 text-white ${micOn ? "" : "bg-blue-600"}`}
+              className={`px-3 py-1 rounded border cursor-pointer bg-blue-400 text-white ${
+                micOn ? "" : "bg-blue-600"
+              }`}
               title={micOn ? "Mute microphone" : "Unmute microphone"}
             >
               {micOn ? "Mute mic" : "Unmute mic"}
@@ -491,7 +532,9 @@ export default function VideoCallOverlay({
             <button
               onClick={toggleCam}
               disabled={!canToggleCam}
-              className={`px-3 py-1 rounded border cursor-pointer bg-blue-400 text-white ${camOn ? "" : "bg-blue-600"}`}
+              className={`px-3 py-1 rounded border cursor-pointer bg-blue-400 text-white ${
+                camOn ? "" : "bg-blue-600"
+              }`}
               title={camOn ? "Turn video off" : "Turn video on"}
             >
               {camOn ? "Video off" : "Video on"}
@@ -502,16 +545,22 @@ export default function VideoCallOverlay({
         {/* Status / errors */}
         <div className="text-sm text-gray-700">
           {step === "idle" && "Preparing media…"}
-          {step === "preview" && (hasCam ? "Camera ready." : hasMic ? "No camera — audio-only." : "Checking devices…")}
+          {step === "preview" &&
+            (hasCam
+              ? "Camera ready."
+              : hasMic
+              ? "No camera — audio-only."
+              : "Checking devices…")}
           {step === "calling" && "Calling… waiting for answer."}
           {step === "incoming" && "You have an incoming call."}
-          {step === "in-call" && (hasCam ? "Connected." : "Connected (audio-only).")}
-          {statusMessage && <div className="text-blue-600">{statusMessage}</div>}
+          {step === "in-call" &&
+            (hasCam ? "Connected." : "Connected (audio-only).")}
+          {statusMessage && (
+            <div className="text-blue-600">{statusMessage}</div>
+          )}
           {error && <div className="text-red-600">{error}</div>}
         </div>
       </div>
     </div>
   );
 }
-
-

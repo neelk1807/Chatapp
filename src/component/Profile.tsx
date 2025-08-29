@@ -1,7 +1,13 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { auth, db } from "@/app/lib/firebase";
-import { doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
+import {
+  doc,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from "firebase/firestore";
 import { updateProfile } from "firebase/auth";
 import { useAuth } from "./AuthProvider";
 import Avatar from "./Avatar";
@@ -23,7 +29,7 @@ export default function Profile() {
   useEffect(() => {
     if (!user) return;
     const ref = doc(db, "users", user.uid);
-    const unsub = onSnapshot(ref, snap => {
+    const unsub = onSnapshot(ref, (snap) => {
       const data = (snap.data() as UserDoc) || null;
       setMe(data);
       setName(data?.displayName || user.displayName || "");
@@ -33,7 +39,9 @@ export default function Profile() {
 
   const pickPhoto = () => fileRef.current?.click();
 
-  const onPhotoChange: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
+  const onPhotoChange: React.ChangeEventHandler<HTMLInputElement> = async (
+    e
+  ) => {
     const file = e.currentTarget.files?.[0];
     e.currentTarget.value = ""; // reset input
     if (!file || !user) return;
@@ -84,7 +92,7 @@ export default function Profile() {
 
       // Also update Firebase Auth profile (handy for other SDKs)
       await updateProfile(auth.currentUser!, { photoURL: uploaded.url });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       alert(`Failed to upload avatar: ${err.message || err}`);
     }
@@ -100,7 +108,9 @@ export default function Profile() {
           body: JSON.stringify({ pathname: me.photoPathname }),
         });
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     try {
       const uref = doc(db, "users", user.uid);
@@ -110,7 +120,7 @@ export default function Profile() {
         updatedAt: serverTimestamp(),
       });
       await updateProfile(auth.currentUser!, { photoURL: "" });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       alert(`Failed to remove photo: ${err.message || err}`);
     }
@@ -127,7 +137,7 @@ export default function Profile() {
         { merge: true }
       );
       await updateProfile(auth.currentUser!, { displayName: name || "" });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       alert(`Failed to save profile: ${err.message || err}`);
     } finally {
@@ -138,14 +148,28 @@ export default function Profile() {
   return (
     <div className="p-4 space-y-4 max-w-xl">
       <div className="flex items-center gap-4">
-        <Avatar src={me?.photoURL || user?.photoURL || null} name={me?.displayName || user?.displayName || user?.email || "You"} size={72} />
+        <Avatar
+          src={me?.photoURL || user?.photoURL || null}
+          name={me?.displayName || user?.displayName || user?.email || "You"}
+          size={72}
+        />
         <div className="flex gap-2">
-          <button onClick={pickPhoto} className="border px-3 py-1 rounded">Change photo</button>
+          <button onClick={pickPhoto} className="border px-3 py-1 rounded">
+            Change photo
+          </button>
           {(me?.photoURL || user?.photoURL) && (
-            <button onClick={removePhoto} className="border px-3 py-1 rounded">Remove</button>
+            <button onClick={removePhoto} className="border px-3 py-1 rounded">
+              Remove
+            </button>
           )}
         </div>
-        <input ref={fileRef} className="hidden" type="file" accept="image/*" onChange={onPhotoChange} />
+        <input
+          ref={fileRef}
+          className="hidden"
+          type="file"
+          accept="image/*"
+          onChange={onPhotoChange}
+        />
       </div>
 
       <label className="block">
@@ -158,7 +182,11 @@ export default function Profile() {
         />
       </label>
 
-      <button onClick={saveName} disabled={saving} className="border px-4 py-2 rounded">
+      <button
+        onClick={saveName}
+        disabled={saving}
+        className="border px-4 py-2 rounded"
+      >
         {saving ? "Saving…" : "Save"}
       </button>
     </div>

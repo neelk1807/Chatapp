@@ -71,8 +71,8 @@ export default function Home() {
           } md:block`}
         >
           {/* Mobile-only top bar */}
-          <div className="md:hidden sticky top-0 z-20 bg-white border-b flex items-center justify-between px-3 py-2">
-            <button onClick={backToList} className="text-sm underline">
+          <div className="md:hidden sticky top-0 z-20 bg-white flex items-center justify-between px-3 py-2">
+            <button onClick={backToList} className="text-sm">
               Back
             </button>
             <div className="font-semibold truncate">Chat</div>
